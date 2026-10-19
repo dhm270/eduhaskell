@@ -1,0 +1,210 @@
+%notation EduHaskell
+%package eduhaskell
+%tables lr
+
+%include {
+    import org.sufrin.scalalr.{SourceLocation,ScannerCore,Scanner}
+    import org.sufrin.utility.SourceTextCursor
+    import eduhaskell.Syntax.Quotation
+
+    def hex(chars: Seq[Char]): Long  = chars.foldLeft(0L) { (acc, c) => acc * 16 + Character.digit(c, 16) }
+    def dec(chars: Seq[Char]): Long  = chars.foldLeft(0L) { (acc, c) => acc * 10 + Character.digit(c, 10) }
+
+    val predefinedSymbols =
+        Seq(
+            OPL2("||"), OPL3("&&"), OPL5("+"), OPL5("~"),
+            OPL6("*"),  OPL6("/"),  OPL6("%")
+        )  ++
+        List("<", "<=", "==", ">", ">=").map(OPL4(_)) ++
+        List(":").map(OPR1(_))
+
+    private val operators = Map(predefinedSymbols.map{ case t: Token => (t.value: String, t) }: _*)
+
+    /**
+        `Scanner(chars)` builds a lexical scanner from a `ScannerCore`. The implementations of
+        the `mkXXX` functions bridge the fixed lexical categories of the builder, and the `%token`
+        constructors declared here. The `withSymbolTokens(symbolToken)` clause initialises the
+        internal symbol map and prefixmap of the resulting builder.
+    */
+
+
+    def makeScanner(chars: SourceTextCursor): Scanner[Token] = new ScannerCore[Token](chars) {
+        def mkString(openQuote: String, closeQuote: String, body: Seq[Char]): Token = STRING(Quotation(openQuote, body.mkString, closeQuote))
+        def mkHex(source: Seq[Char]):          Token = INT(hex(source))
+        def mkDec(source: Seq[Char]):          Token = INT(dec(source))
+        def mkReal(source: Seq[Char]):         Token = REAL(source.mkString.toDouble)
+        def mkIDENTIFIER(source: Seq[Char]):   Token = ID(source.mkString)
+        def mkERROR(source: Seq[Char]):        Token = { LEXICALERROR(s"At ${chars.lines}.${chars.chars}: ${source.mkString}") }
+        val NEWLINE:                    Option[Token] = Some(NL)
+        override val ENDSTREAM: Token                = Scanner.ENDOFFILE
+
+        locally {
+            defineSymbolTokens(symbolToken ++ operators)
+        }
+
+        def flush(): Unit = {
+            while (chars.hasCurrent && chars.current != '\n') chars.next()
+            chars.prompt()
+        }
+    } withSymbolTokens(symbolToken)
+
+}
+
+%token ID(String) INT(Long) REAL(Double) STRING(eduhaskell.Syntax.Quotation) NL LEXICALERROR(String) ENDOFFILE
+%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_`
+
+%prec  LOWEST
+%non   `=`
+%non   '::'
+%right '->'
+%non   OPN0(String)
+%right OPR1(String)
+%left  OPL2(String)
+%left  OPL3(String)
+%non   OPL4(String)
+%left  OPL5(String) '-'
+%left  OPL6(String)
+%left  OPL7(String)
+%left  OPL8(String)
+%left  OPL9(String)
+%left  APPLY
+%prec  HIGHEST
+
+%rules
+
+%include {
+    import org.sufrin.scalalr.Shortcut._
+    import eduhaskell.Syntax._
+    import org.sufrin.utility.PrettyPrint._
+
+    def translate(clause: TREE): TREE = {
+        import eduhaskell.visitor.Visitors._
+        import eduhaskell.visitor.Dispatch._
+        clause match {
+            case it: Expr => it.visit(DetupleExpression)
+            case it: Definition => it.visit(DetupleDefinition)
+        }
+    }
+
+    def layout(clause: TREE): TREE = {
+        import eduhaskell.visitor.Dispatch._
+        import eduhaskell.visitor.Formatting._
+        val scheme = clause match {
+            case it: Expr => ExprFormat(it)
+            case it: Definition => DefinitionFormat(it)
+        }
+        println("----------")
+        println(scheme.render(40))
+        println("----------")
+        clause
+    }
+
+    def MakeEquation(lhs: Expr, rhs: Expr): Definition = {
+        rhs match {
+            case Where(expression, equations) => WhereEquation(lhs, expression, equations)
+            case _                            => Equation(lhs, rhs)
+        }
+    }
+}
+
+session: Unit = (NL)? (anAction NL)+ ENDOFFILE { () }
+
+anAction: Shortcut = onePhrase { layout($onePhrase); translate($onePhrase).prettyPrint(); Instruct(()) }
+                     | ENDOFFILE { Accept(()) }
+
+onePhrase: TREE = expr | equation | typeDef | guardedEquation
+
+EOL: () = %empty { () }
+          | NL { () }
+
+SEMI: () = ';' { () }
+           | NL { () }
+           | ';' NL { () }
+
+whereExpr: Expr = expr { $expr }
+                  | expr `where` equation { Where($expr, List($equation)) }
+                  | expr `where` '{' EOL equations EOL '}' { Where($expr, $equations.reverse) }
+
+equations: List[Definition] = equations SEMI equation { $equation :: $equations }
+                              | equation { List($equation) }
+
+equation: Definition = lhs:pattern '=' rhs:whereExpr { MakeEquation($lhs, $rhs) }
+
+expr: Expr = cases | lambda | expression
+
+lambda: Expr = '\' pattern:pattern guard:(guard)? '->' expression:applicationOrLambda { Function(List(PartialFun($pattern, $guard, $expression))) }
+
+applicationOrLambda: Expr = application | lambda
+
+pattern: Expr = expression
+
+expression: Expr = application
+                   | l:expression op:OPN0 EOL r:expression { Binop($op, $l, $r) }
+                   | l:expression op:OPR1 EOL r:expression { Binop($op, $l, $r) }
+                   | l:expression op:OPL2 EOL r:expression { Binop($op, $l, $r) }
+                   | l:expression op:OPL3 EOL r:expression { Binop($op, $l, $r) }
+                   | l:expression op:OPL4 EOL r:expression { Binop($op, $l, $r) }
+                   | l:expression op:OPL5 EOL r:expression { Binop($op, $l, $r) }
+                   | l:expression '-' EOL r:expression { Binop("-", $l, $r) }
+                   | l:expression op:OPL6 EOL r:expression { Binop($op, $l, $r) }
+                   | l:expression op:OPL7 EOL r:expression { Binop($op, $l, $r) }
+                   | l:expression op:OPL8 EOL r:expression { Binop($op, $l, $r) }
+                   | l:expression op:OPL9 EOL r:expression { Binop($op, $l, $r) }
+
+application: Expr = l:application r:simpleExpression { Apply($l, $r) } %prec APPLY
+                    | '-' simpleExpression { Prefix("-", $simpleExpression) }
+                    | simpleExpression
+
+simpleExpression: Expr = ID { Id($ID) }
+                         | INT { Num($INT) }
+                         | REAL { Real($REAL) }
+                         | STRING { Quote($STRING) }
+                         | '(' ')' { Tuple(Nil) }
+                         | '[' ']' { Sequence(Nil) }
+                         | '(' EOL expressions EOL ')' { Tuple($expressions) }
+                         | '[' EOL expressions EOL ']' { Sequence($expressions) }
+                         | error => ()
+
+guardedEquation: GuardedEquation = pattern:pattern '|' rhss:RHSs where:whereClause { GuardedEquation($pattern, $rhss, $where) }
+
+RHS: GuardedResult = guard:expression '=' EOL expression:expr { GuardedResult($guard, $expression) }
+                     | error => ()
+
+RHSs: List[GuardedResult] = rhs: RHS NL { List($rhs) }
+                            | rhs: RHS NL '|' rhss: RHSs { $rhs :: $rhss }
+
+whereClause: List[Definition] = `where` equation { List($equation) }
+                                | `where` '{' EOL equations EOL '}' { $equations.reverse }
+                                | %empty { Nil }
+
+cases: Function = '{' alts:partialFunctions EOL '}' { Function($alts.reverse) }
+
+partialFunctions: List[PartialFun] = partialFunction { List($partialFunction) }
+                                     | partialFunctions EOL '|' partialFunction { $partialFunction :: $partialFunctions }
+                                     | %empty { Nil }
+
+partialFunction: PartialFun = pattern:pattern guard:(guard)? '->' expression:expr { PartialFun($pattern, $guard, $expression) } %prec HIGHEST
+
+guard: Expr = '|' expr
+
+expressions: List[Expr] = expr ',' EOL expressions => $expr :: $expressions
+                          | expr { List($expr) }
+
+typeDef: TypeDef = symbols: (symbol ',')+ '::' typeExpr => TypeDef($symbols, $typeExpr)
+
+typeExpr: Expr = expression
+                 | l:typeExpr "->" r:typeExpr { Binop("->", $l, $r) }
+
+infix: String = op:OPN0
+                | op:OPR1
+                | op:OPL2
+                | op:OPL3
+                | op:OPL4
+                | op:OPL5
+                | op:OPL6
+                | op:OPL7
+                | op:OPL8
+                | op:OPL9
+
+symbol: Expr = ID { Id($ID) }
+               | '(' infix ')' { Op($infix) } %prec HIGHEST
