@@ -1,0 +1,34 @@
+package build
+
+import mill.*, scalalib.*
+
+trait ComponentModule extends ScalaModule {
+  def scalaVersion = "2.13.18"
+   override def scalacOptions = Seq(
+      "-deprecation",
+      "-feature",
+      "-unchecked"
+    )
+}
+
+// object TinyFun extends ScalalrModule with ComponentModule  {
+//   override
+//   def scalaVersion  = "2.13.18"
+//   def notation      = "tinyfun.scalalr"
+//   def unmanagedJars = "Assets"
+//   def scalalr       = "Assets/scalalr"
+//   def mainClass     = Some("runtinyfun")
+//   def releasePath = "tinyfun"
+// }
+
+object EduHaskell extends ScalalrModule {
+  override
+  def scalaVersion = "2.13.18"
+  def notation = "eduhaskell.scalalr"
+  def unmanagedJars = "Assets"
+  def scalalr = "Assets/scalalr"
+  def mainClass = Some("RunEduHaskell")
+  def releasePath = "eduhaskell"
+}
+
+

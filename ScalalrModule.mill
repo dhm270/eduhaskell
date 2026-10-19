@@ -1,0 +1,92 @@
+package build
+import mill.*, scalalib.*
+
+/**
+
+ A Mill module to support the incremental build of a program
+ that uses scalalr to generate parser component files
+
+Example use:
+{{{
+    package build
+    import mill.*, scalalib.*
+    object RedOx extends ScalalrModule {
+      def notation              = "redox.scalalr"
+      def unmanagedJars         = "ScalaLR"
+      def mainClass             = Some("org.redox.RedOx")
+      def releasePath           = "bin/redox"
+    }
+}}}
+*/
+
+trait ScalalrModule extends ScalaModule {
+  def scalaVersion = "2.13.18"
+  // module-specific
+  def notation:         String
+  def scalalr:          String          = "Assets/scalalr"
+  def unmanagedJars:    String          = "lib"
+  def generatorArgs:    Seq[String]     = Seq("-html")
+  def generatedDirName: String          = "generated"
+  def releasePath:      String          = "release"
+  def releaseTarget:    os.Path         = moduleDir / os.SubPath(releasePath)
+
+  def notationPath:     T[PathRef]      = Task.Input { (PathRef(moduleDir / os.SubPath(notation)))}
+  def parserGenerator:  T[PathRef]      = Task.Input { (PathRef(moduleDir / os.up / os.SubPath(scalalr))) }
+  def unmanagedJarsDir: T[PathRef]      = Task.Input { (PathRef(moduleDir / os.up / os.SubPath(unmanagedJars))) }
+
+
+  // a classpath with all the jars on the unmanagedClassPathDir()
+  override def unmanagedClasspath = Task {
+    val dir = unmanagedJarsDir().path
+    if (!os.exists(dir)) Seq.empty
+    else
+      Seq.from(
+        os.list(dir)
+          .filter(_.ext == "jar")
+          .map(PathRef(_))
+      )
+  }
+
+
+
+   // The parent directory of the generated files
+   override def generatedSources = Task {
+
+        val generated = Task.dest / generatedDirName
+        os.makeDir.all(generated)
+        println(s"****  ${parserGenerator().path}")
+
+        val cmd = (Seq(parserGenerator().path.toString) ++ generatorArgs ++ Seq("-o", generated.toString, notationPath().path.toString)).
+                  map { (x: String) =>x:os.Shellable }
+
+        val result =
+            os.proc(cmd*).
+            call(
+              cwd = Task.dest,
+              check = false,
+              stdout = os.Inherit,
+              stderr = os.Inherit  // TODO: refine scalalr reporting
+            )
+
+        if (result.exitCode != 0) {
+            Task.fail(s"Parser generator failed:\n${result.err.text()}")
+        }
+
+        Seq(PathRef(generated))
+   }
+
+   def release() = Task.Command {
+         val target = releaseTarget
+         os.makeDir.all(target / os.up)
+
+         os.copy.over(
+           assembly().path,
+           target
+         )
+
+         os.proc("chmod", "+x", target)
+         System.err.println(target)
+         PathRef(target)
+   }
+
+}
