@@ -51,7 +51,7 @@
 }
 
 %token ID(String) INT(Long) REAL(Double) STRING(eduhaskell.Syntax.Quotation) NL LEXICALERROR(String) ENDOFFILE
-%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_`
+%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|`
 
 %prec  LOWEST
 %non   `=`
@@ -132,9 +132,7 @@ equation: Definition = lhs:pattern '=' rhs:whereExpr { MakeEquation($lhs, $rhs) 
 
 expr: Expr = cases | lambda | expression
 
-lambda: Expr = '\' pattern:pattern guard:(guard)? '->' expression:applicationOrLambda { Function(List(PartialFun($pattern, $guard, $expression))) }
-
-applicationOrLambda: Expr = application | lambda
+lambda: Expr = '\' pattern:pattern guard:(guard)? '->' expression:expr { Function(List(PartialFun($pattern, $guard, $expression))) }
 
 pattern: Expr = expression
 
