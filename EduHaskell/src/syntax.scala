@@ -59,6 +59,10 @@ object syntax {
         lazy val source = s"${l.source} ${r.source}"
     }
 
+    case class If(condition: Expr, trueExpr: Expr, falseExpr: Expr) extends Expr {
+        lazy val source = s"if ${condition.source} then ${trueExpr.source} else ${falseExpr.source}"
+    }
+
     case class Where(e: Expr, defs: Seq[Definition]) extends Expr {
         lazy val source = s"${e.source} where ${ defs.map(_.source).mkString("; ") }"
     }

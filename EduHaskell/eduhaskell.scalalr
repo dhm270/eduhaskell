@@ -238,17 +238,20 @@ lambda: Expr = '\' pattern:pattern guard:(guard)? '->' expression:expr { Functio
 pattern: Expr = expression
 
 expression: Expr = application
-                   | l:expression op:OPN0 EOL r:expression { Binop($op, $l, $r) }
-                   | l:expression op:OPR1 EOL r:expression { Binop($op, $l, $r) }
-                   | l:expression op:OPL2 EOL r:expression { Binop($op, $l, $r) }
-                   | l:expression op:OPL3 EOL r:expression { Binop($op, $l, $r) }
-                   | l:expression op:OPL4 EOL r:expression { Binop($op, $l, $r) }
-                   | l:expression op:OPL5 EOL r:expression { Binop($op, $l, $r) }
-                   | l:expression '-' EOL r:expression { Binop("-", $l, $r) }
-                   | l:expression op:OPL6 EOL r:expression { Binop($op, $l, $r) }
-                   | l:expression op:OPL7 EOL r:expression { Binop($op, $l, $r) }
-                   | l:expression op:OPL8 EOL r:expression { Binop($op, $l, $r) }
-                   | l:expression op:OPL9 EOL r:expression { Binop($op, $l, $r) }
+                   | binopExpression
+                   | 'if' condition:expression 'then' trueExpr:expression 'else' falseExpr:expression { If($condition, $trueExpr, $falseExpr) }
+
+binopExpression: Expr = l:expression op:OPN0 EOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPR1 EOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL2 EOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL3 EOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL4 EOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL5 EOL r:expression { Binop($op, $l, $r) }
+                        | l:expression '-' EOL r:expression { Binop("-", $l, $r) }
+                        | l:expression op:OPL6 EOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL7 EOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL8 EOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL9 EOL r:expression { Binop($op, $l, $r) }
 
 application: Expr = l:application r:simpleExpression { Apply($l, $r) } %prec APPLY
                     | '-' simpleExpression { Prefix("-", $simpleExpression) }

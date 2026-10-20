@@ -73,6 +73,10 @@
         text(it.op) <+> bracketed("(".t, boxes, ")".t)
       }
 
+      def visit(it: If): Layout.Box = {
+        it.source.text
+      }
+
       def visit(it: Where): Layout.Box = it.source.text // because these expressions are eliminated during parsing
 
       def visit(it: Sequence): Layout.Box = {

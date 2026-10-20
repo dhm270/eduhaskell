@@ -47,21 +47,22 @@ import eduhaskell.syntax._
  *
  */
 trait ExprVisitor[T] { thisVisitor =>
+  def visit(it: Op): T
   def visit(it: Id): T
   def visit(it: Num): T
   def visit(it: Real): T
   def visit(it: Quote): T
   def visit(it: Tuple): T
+  def visit(it: Sequence): T
   def visit(it: Binop): T
   def visit(it: Prefix): T
   def visit(it: Apply): T
-  def visit(it: Bra): T
-  def visit(it: Op): T
-  def visit(it: Assoc): T
+  def visit(it: If): T
   def visit(it: Where): T
-  def visit(it: Sequence): T
   def visit(it: PartialFun): T
   def visit(it: Function): T
+  def visit(it: Bra): T
+  def visit(it: Assoc): T
   // An ExprVisitor can be applied to an expression as if it were a function
   import Dispatch._
   @inline def apply(it: Expr): T = it.visit(thisVisitor)
@@ -103,21 +104,22 @@ object Dispatch {
   implicit class ExprDispatch(val expr: Expr) extends AnyVal {
     def visit[T](v: ExprVisitor[T]):T =
       expr match {
+          case it: Op => v.visit(it)
           case it: Id => v.visit(it)
           case it: Num => v.visit(it)
           case it: Real => v.visit(it)
           case it: Quote => v.visit(it)
           case it: Tuple => v.visit(it)
+          case it: Sequence => v.visit(it)
           case it: Binop => v.visit(it)
           case it: Prefix => v.visit(it)
           case it: Apply => v.visit(it)
-          case it: Bra => v.visit(it)
-          case it: Op => v.visit(it)
-          case it: Assoc => v.visit(it)
+          case it: If => v.visit(it)
           case it: Where => v.visit(it)
-          case it: Sequence => v.visit(it)
           case it: PartialFun => v.visit(it)
           case it: Function => v.visit(it)
+          case it: Bra => v.visit(it)
+          case it: Assoc => v.visit(it)
       }
   }
 
@@ -141,6 +143,7 @@ object Visitors {
   /** A "shallow" identity visit: the core of  more interesting transforms */
   trait Identity extends ExprVisitor[Expr] {
     type T = Expr
+    def visit(it: Op): T = it
     def visit(it: Id): T = it
     def visit(it: Num): T = it
     def visit(it: Real): T = it
@@ -149,12 +152,12 @@ object Visitors {
     def visit(it: Binop): T = it
     def visit(it: Prefix): T = it
     def visit(it: Apply): T = it
-    def visit(it: Bra): T = it
-    def visit(it: Op): T = it
-    def visit(it: Assoc): T = it
+    def visit(it: If): T = it
     def visit(it: Where): T = it
     def visit(it: PartialFun): T = it
     def visit(it: Function): T = it
+    def visit(it: Bra): T = it
+    def visit(it: Assoc): T = it
   }
 
   /**
@@ -267,6 +270,10 @@ object Formatting {
     def visit(it: Assoc): Layout.Box = {
       val boxes = it.exprs.map(ExprFormat(_))           //(_.visit(ExprFormat))
       text(it.op) <+> bracketed("(".t, boxes, ")".t)
+    }
+
+    def visit(it: If): Layout.Box = {
+      it.source.text
     }
 
     def visit(it: Where): Layout.Box = it.source.text // because these expressions are eliminated during parsing
