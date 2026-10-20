@@ -153,6 +153,7 @@
 
 %token ID(String) INT(Long) REAL(Double) STRING(eduhaskell.syntax.Quotation) NL LEXICALERROR(String) ENDOFFILE
 %token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|`
+%token `if` `then` `else` `let` `in`
 
 %prec  LOWEST
 %non   `=`
@@ -240,6 +241,10 @@ pattern: Expr = expression
 expression: Expr = application
                    | binopExpression
                    | 'if' condition:expression 'then' trueExpr:expression 'else' falseExpr:expression { If($condition, $trueExpr, $falseExpr) }
+                   | letExpression
+
+letExpression: Expr = 'let' equation 'in' expr { Where($expr, List($equation)) }
+                      | 'let' '{' EOL equations EOL '}' 'in' expr { Where($expr, $equations.reverse) }
 
 binopExpression: Expr = l:expression op:OPN0 EOL r:expression { Binop($op, $l, $r) }
                         | l:expression op:OPR1 EOL r:expression { Binop($op, $l, $r) }
