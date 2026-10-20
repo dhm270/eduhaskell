@@ -33,7 +33,7 @@ package visitor
  * }}}
  */
 
-import eduhaskell.Syntax._
+import eduhaskell.syntax._
 
 /**
  *

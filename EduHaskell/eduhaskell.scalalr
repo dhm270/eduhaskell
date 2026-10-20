@@ -5,7 +5,7 @@
 %include {
     import org.sufrin.scalalr.{SourceLocation,ScannerCore,Scanner}
     import org.sufrin.utility.SourceTextCursor
-    import eduhaskell.Syntax.Quotation
+    import eduhaskell.syntax.Quotation
 
     def hex(chars: Seq[Char]): Long  = chars.foldLeft(0L) { (acc, c) => acc * 16 + Character.digit(c, 16) }
     def dec(chars: Seq[Char]): Long  = chars.foldLeft(0L) { (acc, c) => acc * 10 + Character.digit(c, 10) }
@@ -38,6 +38,107 @@
         val NEWLINE:                    Option[Token] = Some(NL)
         override val ENDSTREAM: Token                = Scanner.ENDOFFILE
 
+        override def eatComment(): Unit = {
+            val loc = sourceLocation()
+            var level = 1
+            var lastChar = ' '
+            nextChar()                      // skip the -
+            while (hasChar && level!=0) {
+                theChar match {
+                    case '-' if lastChar == '{' => level += 1
+                    case '}' if lastChar == '-' => level -= 1
+                    case _                      => lastChar=theChar
+                }
+                nextChar()
+            }
+            if (level != 0) System.err.println(s"WARNING: nested (level $level) comment unclosed $loc")
+            nextChar()
+        }
+
+        override def next(): Token = if (hasChar) {
+            lastLocation = SourceLocation(chars.lines, chars.chars)
+            theChar match {
+                case c if c.isLetter =>
+                    val prefix = chars.takeWhile(_.isLetterOrDigit)
+                    val string = prefix.mkString("")
+                    tokenMap.getOrElse(string, mkIDENTIFIER(string))
+
+                case '0' =>
+                    nextChar()
+                    theChar.toLower match {
+                        case 'x' =>
+                            nextChar()
+                            mkHex(chars.takeWhile(c => c.isDigit || ("abcdef" contains c.toLower)))
+                        case other =>
+                            nextNumber(chars.takeWhile(c => c.isDigit).prepended('0'))
+                    }
+                case c if c.isDigit =>
+                    val intPart = chars.takeWhile(c => c.isDigit)
+                    nextNumber(intPart)
+
+                case '\u0004' =>
+                    ENDSTREAM
+                case '\u0000' =>
+                    nextChar()
+                    if (hasChar) next() else ENDSTREAM
+
+                // When a newline appears return NEWLINE (if it's defined) without actually reading ahead.
+                // and pretend that the read ahead got a nul, so that the subsequent next() skips this nul
+                case c if c == '\n' && allowNL =>
+                    chars.current = '\u0000'
+                    if (NEWLINE.isDefined) NEWLINE.get else next()
+
+                case c if c.isWhitespace =>
+                    while (hasChar && theChar.isWhitespace) nextChar()
+                    if (hasChar) next() else ENDSTREAM
+
+                case '{' => // ScalaLR gets a bit confused because of the open bracket in this line. So we need this to fix it: }
+                    nextChar()
+                    theChar match {
+                        case '-' =>
+                            eatComment()
+                            next()
+                        case other =>
+                            tokenPrefixMap.longestPrefixMatch(s"{$other") match { // As above: }
+                                case None => mkERROR(s"at: {$other") // As above: }
+                                case Some((tok, edges)) =>
+                                    tok
+                            }
+                    }
+                
+                case '-' =>
+                    nextChar()
+                    theChar match {
+                        case '-' =>
+                            chars.dropWhile(c => c != '\n')
+                            next()
+                        case other =>
+                            tokenPrefixMap.longestPrefixMatch(s"-$other") match {
+                                case None => mkERROR(s"at: -$other")
+                                case Some((tok, edges)) => tok
+                            }
+                    }
+
+                case '«' =>
+                    nextChar(); afterNextChar(mkString("«", "»", chars.takeNested2('«', '»')))
+                case '“' =>
+                    nextChar(); afterNextChar(mkString("“", "“", chars.takeNested2('“', '“')))
+                case '"' =>
+                    nextChar(); afterNextChar(mkString("\"", "\"", chars.takeWhile(c => c != '"')))
+                case '\'' =>
+                    nextChar(); afterNextChar(mkString("'", "'", chars.takeWhile(c => c != '\'')))
+
+                case c =>
+                    tokenPrefixMap.longestPrefixMatch(chars) match {
+                        case None =>
+                            nextChar()
+                            mkERROR(s"No token starting `$c` [${c.toInt}] can be completed here.")
+                        case Some((tok, edges)) =>
+                            tok
+                    }
+            }
+        } else ENDSTREAM
+
         locally {
             defineSymbolTokens(symbolToken ++ operators)
         }
@@ -50,7 +151,7 @@
 
 }
 
-%token ID(String) INT(Long) REAL(Double) STRING(eduhaskell.Syntax.Quotation) NL LEXICALERROR(String) ENDOFFILE
+%token ID(String) INT(Long) REAL(Double) STRING(eduhaskell.syntax.Quotation) NL LEXICALERROR(String) ENDOFFILE
 %token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|`
 
 %prec  LOWEST
@@ -74,7 +175,7 @@
 
 %include {
     import org.sufrin.scalalr.Shortcut._
-    import eduhaskell.Syntax._
+    import eduhaskell.syntax._
     import org.sufrin.utility.PrettyPrint._
 
     def translate(clause: TREE): TREE = {

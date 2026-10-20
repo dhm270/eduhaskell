@@ -1,6 +1,6 @@
 
   package eduhaskell
-  import eduhaskell.Syntax._
+  import eduhaskell.syntax._
   import eduhaskell.visitor.Dispatch._
   import eduhaskell.visitor.{DefinitionVisitor, ExprVisitor}
   import org.sufrin.util.Layout.Box._

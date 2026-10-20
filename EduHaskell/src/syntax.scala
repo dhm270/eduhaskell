@@ -1,6 +1,6 @@
 package eduhaskell
 
-object Syntax {
+object syntax {
     trait TREE {
         val source: String
         override lazy val toString: String = source
