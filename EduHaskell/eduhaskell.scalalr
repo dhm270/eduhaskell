@@ -152,13 +152,12 @@
 }
 
 %token ID(String) INT(Long) REAL(Double) STRING(eduhaskell.syntax.Quotation) NL LEXICALERROR(String) ENDOFFILE
-%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|`
+%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|` `->`
 %token `if` `then` `else` `let` `in`
 
 %prec  LOWEST
 %non   `=`
 %non   '::'
-%right '->'
 %non   OPN0(String)
 %right OPR1(String)
 %left  OPL2(String)
