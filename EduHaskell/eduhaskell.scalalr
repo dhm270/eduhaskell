@@ -154,7 +154,7 @@
 }
 
 %token ID(String) INT(Long) REAL(Double) STRING(eduhaskell.syntax.Quotation) NL LEXICALERROR(String) ENDOFFILE
-%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|` `->`
+%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|` `->` `<-`
 %token `if` `then` `else` `let` `in` `case` `of`
 
 %prec  LOWEST
@@ -280,7 +280,13 @@ simpleExpression: Expr = ID { Id($ID) }
                          | '[' ']' { Sequence(Nil) }
                          | '(' EOL expressions EOL ')' { Tuple($expressions) }
                          | '[' EOL expressions EOL ']' { Sequence($expressions) }
+                         | '[' EOL expression EOL '|' qualifiers ']' { SequenceComprehension($expression, $qualifiers) }
                          | error => ()
+
+qualifiers: List[(Expr, Expr)] = qualifier { List($qualifier) }
+                                 | qualifier ',' qualifiers { $qualifier :: $qualifiers }
+
+qualifier: (Expr, Expr) = pattern:pattern '<-' expression { ($pattern, $expression) }
 
 guardedEquation: GuardedEquation = pattern:pattern '|' rhss:RHSs where:whereClause { GuardedEquation($pattern, $rhss, $where) }
 

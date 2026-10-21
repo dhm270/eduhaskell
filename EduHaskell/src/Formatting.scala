@@ -88,6 +88,10 @@
         bracketed("[".t, boxes, "]".t)
       }
 
+      def visit(it: SequenceComprehension): Layout.Box = {
+        it.source.text
+      }
+
       def visit(it: PartialFun): Layout.Box = {
         val pat   = ExprFormat(it.pattern)
         val guard = it.guard match {

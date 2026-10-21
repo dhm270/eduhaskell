@@ -47,6 +47,10 @@ object syntax {
         lazy val source = exprs.mkString("[", ", ", "]")
     }
 
+    case class SequenceComprehension(expr: Expr, qualifiers: Seq[(Expr, Expr)]) extends Expr {
+        lazy val source = s"[${expr.source} | ${qualifiers.map({ case (a, b) => a.source + " <- " + b.source }).mkString(", ")}]"
+    }
+
     case class Binop(op: String, l: Expr, r: Expr) extends Expr {
         lazy val source = s"${l.source} $op ${r.source}"
     }
@@ -64,7 +68,7 @@ object syntax {
     }
 
     case class Case(query: Expr, alts: Seq[(Expr, Expr)]) extends Expr {
-        lazy val source = s"case ${query.source} of { ${alts.map({ case (a, b) => a.source + " -> "  + b.source}).mkString("; ")} }"
+        lazy val source = s"case ${query.source} of { ${alts.map({ case (a, b) => a.source + " -> "  + b.source }).mkString("; ")} }"
     }
 
     case class Where(e: Expr, defs: Seq[Definition]) extends Expr {
