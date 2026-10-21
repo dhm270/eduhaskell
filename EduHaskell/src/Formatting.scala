@@ -77,6 +77,10 @@
         it.source.text
       }
 
+      def visit(it: Case): Layout.Box = {
+        it.source.text
+      }
+
       def visit(it: Where): Layout.Box = it.source.text // because these expressions are eliminated during parsing
 
       def visit(it: Sequence): Layout.Box = {

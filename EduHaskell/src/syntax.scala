@@ -63,6 +63,10 @@ object syntax {
         lazy val source = s"if ${condition.source} then ${trueExpr.source} else ${falseExpr.source}"
     }
 
+    case class Case(query: Expr, alts: Seq[(Expr, Expr)]) extends Expr {
+        lazy val source = s"case ${query.source} of { ${alts.map({ case (a, b) => a.source + " -> "  + b.source}).mkString("; ")} }"
+    }
+
     case class Where(e: Expr, defs: Seq[Definition]) extends Expr {
         lazy val source = s"${e.source} where ${ defs.map(_.source).mkString("; ") }"
     }

@@ -58,6 +58,7 @@ trait ExprVisitor[T] { thisVisitor =>
   def visit(it: Prefix): T
   def visit(it: Apply): T
   def visit(it: If): T
+  def visit(it: Case): T
   def visit(it: Where): T
   def visit(it: PartialFun): T
   def visit(it: Function): T
@@ -115,6 +116,7 @@ object Dispatch {
           case it: Prefix => v.visit(it)
           case it: Apply => v.visit(it)
           case it: If => v.visit(it)
+          case it: Case => v.visit(it)
           case it: Where => v.visit(it)
           case it: PartialFun => v.visit(it)
           case it: Function => v.visit(it)
@@ -153,6 +155,7 @@ object Visitors {
     def visit(it: Prefix): T = it
     def visit(it: Apply): T = it
     def visit(it: If): T = it
+    def visit(it: Case): T = it
     def visit(it: Where): T = it
     def visit(it: PartialFun): T = it
     def visit(it: Function): T = it
@@ -273,6 +276,10 @@ object Formatting {
     }
 
     def visit(it: If): Layout.Box = {
+      it.source.text
+    }
+
+    def visit(it: Case): Layout.Box = {
       it.source.text
     }
 
