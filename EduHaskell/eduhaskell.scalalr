@@ -115,7 +115,7 @@
                         case other =>
                             tokenPrefixMap.longestPrefixMatch(s"-$other") match {
                                 case None => mkERROR(s"at: -$other")
-                                case Some((tok, edges)) => tok
+                                case Some((tok, edges)) => afterNextChar(tok)
                             }
                     }
 
