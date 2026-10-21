@@ -11,16 +11,6 @@ trait ComponentModule extends ScalaModule {
     )
 }
 
-// object TinyFun extends ScalalrModule with ComponentModule  {
-//   override
-//   def scalaVersion  = "2.13.18"
-//   def notation      = "tinyfun.scalalr"
-//   def unmanagedJars = "Assets"
-//   def scalalr       = "Assets/scalalr"
-//   def mainClass     = Some("runtinyfun")
-//   def releasePath = "tinyfun"
-// }
-
 object EduHaskell extends ScalalrModule {
   override
   def scalaVersion = "2.13.18"
@@ -29,6 +19,10 @@ object EduHaskell extends ScalalrModule {
   def scalalr = "Assets/scalalr"
   def mainClass = Some("RunEduHaskell")
   def releasePath = "eduhaskell"
+
+  object test extends ScalaTests with TestModule.Munit {
+    override def munitVersion: T[String] = "1.0.4"
+  }
 }
 
 

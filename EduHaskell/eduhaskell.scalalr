@@ -212,7 +212,7 @@
 
 session: Unit = (NL)? (anAction NL)+ ENDOFFILE { () }
 
-anAction: Shortcut = onePhrase { layout($onePhrase); translate($onePhrase).prettyPrint(); Instruct(()) }
+anAction: Shortcut = onePhrase { layout($onePhrase); translate($onePhrase).prettyPrint(); Instruct($onePhrase) }
                      | ENDOFFILE { Accept(()) }
 
 onePhrase: TREE = expr | equation | typeDef | guardedEquation
