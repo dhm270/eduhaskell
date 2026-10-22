@@ -315,8 +315,13 @@ expressions: List[Expr] = expr ',' EOL expressions => $expr :: $expressions
 
 typeDef: TypeDef = symbols: (symbol ',')+ '::' typeExpr => TypeDef($symbols, $typeExpr)
 
-typeExpr: Expr = expression
-                 | l:typeExpr "->" r:typeExpr { Binop("->", $l, $r) }
+typeExpr: Expr = l:typeExpr "->" r:typeExpr { Binop("->", $l, $r) }
+                 | ID { Id($ID) }
+                 | '(' typeExprs ')' { Tuple($typeExprs) }
+                 | '[' typeExpr ']' { Sequence(List($typeExpr)) }
+
+typeExprs: List[Expr] = typeExpr ',' typeExprs { $typeExpr :: $typeExprs }
+                        | typeExpr { List($typeExpr) }
 
 infix: String = op:OPN0
                 | op:OPR1

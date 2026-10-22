@@ -318,4 +318,54 @@ class ParserTests extends munit.FunSuite {
         )
         assert(structureMatches(result, expectedResult))
     }
+
+    test("Parse f :: a") {
+        val result = parse("f :: a")
+        val expectedResult = TypeDef(List(Id("f")), Id("a"))
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse f :: a -> b") {
+        val result = parse("f :: a -> b")
+        val expectedResult = TypeDef(List(Id("f")), Binop("->", Id("a"), Id("b")))
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse f :: (a -> b) -> c") {
+        val result = parse("f :: (a -> b) -> c")
+        val expectedResult = TypeDef(
+            List(Id("f")),
+            Binop("->", Tuple(List(Binop("->", Id("a"), Id("b")))), Id("c"))
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse f :: [a]") {
+        val result = parse("f :: [a]")
+        val expectedResult = TypeDef(
+            List(Id("f")),
+            Sequence(List(Id("a")))
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse f :: [a -> b]") {
+        val result = parse("f :: [a -> b]")
+        val expectedResult = TypeDef(
+            List(Id("f")),
+            Sequence(List(
+                Binop("->", Id("a"), Id("b"))
+            ))
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse f, g :: [a]") {
+        val result = parse("f, g :: [a]")
+        val expectedResult = TypeDef(
+            List(Id("f"), Id("g")),
+            Sequence(List(Id("a")))
+        )
+        assert(structureMatches(result, expectedResult))
+    }
 }
