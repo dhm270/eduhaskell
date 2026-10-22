@@ -62,8 +62,16 @@ class ParserTests extends munit.FunSuite {
                 }
             }
             case SequenceComprehension(expr, qualifiers) => {
-                // TODO
-                true
+                b match {
+                    case SequenceComprehension(expr1, qualifiers1) => {
+                        if (!structureMatches(expr, expr1)) {
+                            false
+                        } else {
+                            qualifiers.zip(qualifiers1).forall({ case ((a1, b1), (a2, b2)) => structureMatches(a1, a2) && structureMatches(b1, b2) })
+                        }
+                    }
+                    case _ => false
+                }
             }
             case Binop(op, l, r) => {
                 b match {
@@ -90,12 +98,24 @@ class ParserTests extends munit.FunSuite {
                 }
             }
             case Case(query, alts) => {
-                // TODO
-                true
+                b match {
+                    case Case(query1, alts1) => {
+                        if (!structureMatches(query, query1)) {
+                            false
+                        } else {
+                            alts.zip(alts1).forall({ case ((a1, b1), (a2, b2)) => structureMatches(a1, a2) && structureMatches(b1, b2) })
+                        }
+                    }
+                    case _ => false
+                }
             }
             case Where(e, defs) => {
-                // TODO
-                true
+                b match {
+                    case Where(e1, defs1) => {
+                        structureMatches(e, e1) && defs.zip(defs1).forall({ case (a, b) => structureMatches(a, b) })
+                    }
+                    case _ => false
+                }
             }
             case PartialFun(pattern, guard, expr) => {
                 b match {
@@ -131,6 +151,43 @@ class ParserTests extends munit.FunSuite {
                     case _ => false
                 }
             }
+
+            case Equation(lhs, rhs) => {
+                b match {
+                    case Equation(lhs1, rhs1) => structureMatches(lhs, lhs1) && structureMatches(rhs, rhs1)
+                    case _ => false
+                }
+            }
+            case GuardedEquation(pattern, cases, definitions) => {
+                b match {
+                    case GuardedEquation(pattern1, cases1, definitions1) => {
+                        if (!structureMatches(pattern, pattern1)) {
+                            false
+                        } else if (!definitions.zip(definitions1).forall({ case (a, b) => structureMatches(a, b) })) {
+                            false
+                        } else {
+                            cases.zip(cases1).forall({
+                                case (GuardedResult(guard, expr), GuardedResult(guard1, expr1)) => structureMatches(guard, guard1) && structureMatches(expr, expr1)
+                                case _ => false
+                            })
+                        }
+                    }
+                    case _ => false
+                }
+            }
+            case TypeDef(symbols, rhs) => {
+                b match {
+                    case TypeDef(symbols1, rhs1) => structureMatches(rhs, rhs1) && symbols.zip(symbols1).forall({ case (a, b) => structureMatches(a, b) })
+                    case _ => false
+                }
+            }
+            case WhereEquation(lhs, rhs, defs) => {
+                b match {
+                    case WhereEquation(lhs1, rhs1, defs1) => structureMatches(lhs, lhs1) && structureMatches(rhs, rhs1) && defs.zip(defs1).forall({ case (a, b) => structureMatches(a, b) })
+                    case _ => false
+                }
+            }
+
             case _ => false
         }
     }
@@ -164,9 +221,9 @@ class ParserTests extends munit.FunSuite {
         val expectedResult = WhereEquation(
             Apply(Id("f"), Id("x")),
             Apply(Id("g"), Id("x")),
-            [
+            List(
                 Equation(Apply(Id("g"), Id("y")), Binop("*", Id("y"), Num(2)))
-            ]
+            )
         )
         assert(structureMatches(result, expectedResult))
     }
@@ -174,17 +231,17 @@ class ParserTests extends munit.FunSuite {
     test("Parse lambda application") {
         val result = parse("(\\x -> x * 2) 3")
         val expectedResult = Apply(
-            Bra(
-                Function([
+            Tuple(List(
+                Function(List(
                     PartialFun(Id("x"), None, Binop("*", Id("x"), Num(2)))
-                ])
-            ),
+                ))
+            )),
             Num(3)
         )
         assert(structureMatches(result, expectedResult))
     }
 
-    test("Full-line comment") {
+    test("Parse full-line comment") {
         val result = parse(
             """-- Comment
             1 + 1"""
@@ -193,9 +250,72 @@ class ParserTests extends munit.FunSuite {
         assert(structureMatches(result, expectedResult))
     }
 
-    test("Inline comment") {
+    test("Parse inline comment") {
         val result = parse("1 + 1 -- Inline comment")
         val expectedResult = Binop("+", Num(1), Num(1))
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse multi-line comment") {
+        val result = parse(
+            """{-
+            Multi-line comment
+            -}
+            1 + 1"""
+        )
+        val expectedResult = Binop("+", Num(1), Num(1))
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse if-then-else") {
+        val result = parse("if x < 3 then x else 3")
+        val expectedResult = If(
+            Binop("<", Id("x"), Num(3)),
+            Id("x"),
+            Num(3)
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse let-in") {
+        val result = parse("let x = 3 in x + 2")
+        val expectedResult = Where(
+            Binop("+", Id("x"), Num(2)),
+            List(Equation(Id("x"), Num(3)))
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse case statement with one case") {
+        val result = parse("case x of 3 -> 4")
+        val expectedResult = Case(
+            Id("x"),
+            List((Num(3), Num(4)))
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse case statement with multiple cases") {
+        val result = parse("case x of { 3 -> 4; 5 -> 6 }")
+        val expectedResult = Case(
+            Id("x"),
+            List(
+                (Num(3), Num(4)),
+                (Num(5), Num(6))
+            )
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse list comprehension") {
+        val result = parse("[x | x <- y, y <- z]")
+        val expectedResult = SequenceComprehension(
+            Id("x"),
+            List(
+                (Id("x"), Id("y")),
+                (Id("y"), Id("z"))
+            )
+        )
         assert(structureMatches(result, expectedResult))
     }
 }
