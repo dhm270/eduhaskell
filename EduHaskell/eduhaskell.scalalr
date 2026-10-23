@@ -210,15 +210,15 @@
     }
 }
 
-session: Unit = (NL)? (anAction NL)+ ENDOFFILE { () }
+program: Unit = (NL)? (anAction NL)+ ENDOFFILE { () }
 
 anAction: Shortcut = onePhrase { layout($onePhrase); translate($onePhrase).prettyPrint(); Instruct($onePhrase) }
                      | ENDOFFILE { Accept(()) }
 
 onePhrase: TREE = expr | equation | typeDef | guardedEquation
 
-EOL: () = %empty { () }
-          | NL { () }
+maybeEOL: () = %empty { () }
+               | NL { () }
 
 SEMI: () = ';' { () }
            | NL { () }
@@ -226,47 +226,47 @@ SEMI: () = ';' { () }
 
 whereExpr: Expr = expr { $expr }
                   | expr `where` equation { Where($expr, List($equation)) }
-                  | expr `where` '{' EOL equations EOL '}' { Where($expr, $equations.reverse) }
+                  | expr `where` '{' maybeEOL equations maybeEOL '}' { Where($expr, $equations.reverse) }
 
 equations: List[Definition] = equations SEMI equation { $equation :: $equations }
                               | equation { List($equation) }
 
-equation: Definition = lhs:pattern '=' rhs:whereExpr { MakeEquation($lhs, $rhs) }
+equation: Definition = lhs:pattern '=' maybeEOL rhs:whereExpr { MakeEquation($lhs, $rhs) }
 
 expr: Expr = cases | lambda | expression
 
-lambda: Expr = '\' pattern:pattern guard:(guard)? '->' expression:expr { Function(List(PartialFun($pattern, $guard, $expression))) }
+lambda: Expr = '\' pattern:pattern guard:(guard)? '->' maybeEOL expression:expr { Function(List(PartialFun($pattern, $guard, $expression))) }
 
 pattern: Expr = expression
 
 expression: Expr = application
                    | binopExpression
-                   | 'if' condition:expression 'then' trueExpr:expression 'else' falseExpr:expression { If($condition, $trueExpr, $falseExpr) }
+                   | 'if' condition:expression maybeEOL 'then' maybeEOL trueExpr:expression maybeEOL 'else' maybeEOL falseExpr:expression { If($condition, $trueExpr, $falseExpr) }
                    | letExpression
                    | caseExpression
 
-caseExpression: Expr = 'case' query:expression 'of' alt { Case($query, List($alt)) }
-                       | 'case' query:expression 'of' '{' alts '}' { Case($query, $alts) }
+caseExpression: Expr = 'case' maybeEOL query:expression maybeEOL 'of' maybeEOL alt { Case($query, List($alt)) }
+                       | 'case' maybeEOL query:expression maybeEOL 'of' maybeEOL '{' maybeEOL alts maybeEOL '}' { Case($query, $alts) }
 
 alts: List[(Expr, Expr)] = alt { List($alt) }
-                           | alt ';' alts { $alt :: $alts }
+                           | alt SEMI alts { $alt :: $alts }
 
 alt: (Expr, Expr) = pattern:pattern '->' expression { ($pattern, $expression) }
 
-letExpression: Expr = 'let' equation 'in' expr { Where($expr, List($equation)) }
-                      | 'let' '{' EOL equations EOL '}' 'in' expr { Where($expr, $equations.reverse) }
+letExpression: Expr = 'let' equation 'in' maybeEOL expr { Where($expr, List($equation)) }
+                      | 'let' '{' maybeEOL equations maybeEOL '}' maybeEOL 'in' maybeEOL expr { Where($expr, $equations.reverse) }
 
-binopExpression: Expr = l:expression op:OPN0 EOL r:expression { Binop($op, $l, $r) }
-                        | l:expression op:OPR1 EOL r:expression { Binop($op, $l, $r) }
-                        | l:expression op:OPL2 EOL r:expression { Binop($op, $l, $r) }
-                        | l:expression op:OPL3 EOL r:expression { Binop($op, $l, $r) }
-                        | l:expression op:OPL4 EOL r:expression { Binop($op, $l, $r) }
-                        | l:expression op:OPL5 EOL r:expression { Binop($op, $l, $r) }
-                        | l:expression '-' EOL r:expression { Binop("-", $l, $r) }
-                        | l:expression op:OPL6 EOL r:expression { Binop($op, $l, $r) }
-                        | l:expression op:OPL7 EOL r:expression { Binop($op, $l, $r) }
-                        | l:expression op:OPL8 EOL r:expression { Binop($op, $l, $r) }
-                        | l:expression op:OPL9 EOL r:expression { Binop($op, $l, $r) }
+binopExpression: Expr = l:expression op:OPN0 maybeEOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPR1 maybeEOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL2 maybeEOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL3 maybeEOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL4 maybeEOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL5 maybeEOL r:expression { Binop($op, $l, $r) }
+                        | l:expression '-' maybeEOL r:expression { Binop("-", $l, $r) }
+                        | l:expression op:OPL6 maybeEOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL7 maybeEOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL8 maybeEOL r:expression { Binop($op, $l, $r) }
+                        | l:expression op:OPL9 maybeEOL r:expression { Binop($op, $l, $r) }
 
 application: Expr = l:application r:simpleExpression { Apply($l, $r) } %prec APPLY
                     | '-' simpleExpression { Prefix("-", $simpleExpression) }
@@ -278,39 +278,39 @@ simpleExpression: Expr = ID { Id($ID) }
                          | STRING { Quote($STRING) }
                          | '(' ')' { Tuple(Nil) }
                          | '[' ']' { Sequence(Nil) }
-                         | '(' EOL expressions EOL ')' { Tuple($expressions) }
-                         | '[' EOL expressions EOL ']' { Sequence($expressions) }
-                         | '[' EOL expression EOL '|' qualifiers ']' { SequenceComprehension($expression, $qualifiers) }
+                         | '(' maybeEOL expressions maybeEOL ')' { Tuple($expressions) }
+                         | '[' maybeEOL expressions maybeEOL ']' { Sequence($expressions) }
+                         | '[' maybeEOL expression maybeEOL '|' maybeEOL qualifiers maybeEOL ']' { SequenceComprehension($expression, $qualifiers) }
                          | error => ()
 
 qualifiers: List[(Expr, Expr)] = qualifier { List($qualifier) }
-                                 | qualifier ',' qualifiers { $qualifier :: $qualifiers }
+                                 | qualifier maybeEOL ',' maybeEOL qualifiers { $qualifier :: $qualifiers }
 
 qualifier: (Expr, Expr) = pattern:pattern '<-' expression { ($pattern, $expression) }
 
 guardedEquation: GuardedEquation = pattern:pattern '|' rhss:RHSs where:whereClause { GuardedEquation($pattern, $rhss, $where) }
 
-RHS: GuardedResult = guard:expression '=' EOL expression:expr { GuardedResult($guard, $expression) }
+RHS: GuardedResult = guard:expression '=' maybeEOL expression:expr { GuardedResult($guard, $expression) }
                      | error => ()
 
 RHSs: List[GuardedResult] = rhs: RHS NL { List($rhs) }
                             | rhs: RHS NL '|' rhss: RHSs { $rhs :: $rhss }
 
-whereClause: List[Definition] = `where` equation { List($equation) }
-                                | `where` '{' EOL equations EOL '}' { $equations.reverse }
+whereClause: List[Definition] = `where` maybeEOL equation { List($equation) }
+                                | `where` maybeEOL '{' maybeEOL equations maybeEOL '}' { $equations.reverse }
                                 | %empty { Nil }
 
-cases: Function = '{' alts:partialFunctions EOL '}' { Function($alts.reverse) }
+cases: Function = '{' alts:partialFunctions maybeEOL '}' { Function($alts.reverse) }
 
 partialFunctions: List[PartialFun] = partialFunction { List($partialFunction) }
-                                     | partialFunctions EOL '|' partialFunction { $partialFunction :: $partialFunctions }
+                                     | partialFunctions maybeEOL '|' partialFunction { $partialFunction :: $partialFunctions }
                                      | %empty { Nil }
 
 partialFunction: PartialFun = pattern:pattern guard:(guard)? '->' expression:expr { PartialFun($pattern, $guard, $expression) } %prec HIGHEST
 
 guard: Expr = '|' expr
 
-expressions: List[Expr] = expr ',' EOL expressions => $expr :: $expressions
+expressions: List[Expr] = expr ',' maybeEOL expressions => $expr :: $expressions
                           | expr { List($expr) }
 
 typeDef: TypeDef = symbols: (symbol ',')+ '::' typeExpr => TypeDef($symbols, $typeExpr)
