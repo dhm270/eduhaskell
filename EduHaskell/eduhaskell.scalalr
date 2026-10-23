@@ -196,9 +196,9 @@
             case it: Expr => ExprFormat(it)
             case it: Definition => DefinitionFormat(it)
         }
-        println("----------")
+        print("Parsed as: ")
         println(scheme.render(40))
-        println("----------")
+        println("with tree:")
         clause
     }
 

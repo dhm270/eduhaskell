@@ -7,6 +7,9 @@ import org.sufrin.utility._
 
 import eduhaskell.Components
 import eduhaskell.Scanner._
+import eduhaskell.Evaluator
+import eduhaskell.Environment
+import eduhaskell.syntax._
 
 import LRParser._
 
@@ -26,6 +29,7 @@ object RunEduHaskell {
         val scanner = makeScanner(input)
 
         while (state == RUNNING) {
+            print("> ")
             val parser = LRParser.Pull[Token](Components)(scanner.sourceLocation)
 
             parser.reductionOnError = true
@@ -36,6 +40,11 @@ object RunEduHaskell {
                 case ERRONEOUS(message) =>
                     println(message)
                     if (interactive) state = RUNNING
+                case INSTRUCTED(instruction) =>
+                    print("< ")
+                    println(Evaluator.evaluate(new Environment(), instruction.asInstanceOf[TREE]))
+                    println()
+                    state = RUNNING
                 case ACCEPTED(()) =>
                     println()
                 case _ =>
