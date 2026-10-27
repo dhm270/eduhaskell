@@ -54,6 +54,7 @@ trait ExprVisitor[T] { thisVisitor =>
   def visit(it: Quote): T
   def visit(it: Tuple): T
   def visit(it: Sequence): T
+  def visit(it: ArithmeticSequence): T
   def visit(it: SequenceComprehension): T
   def visit(it: Binop): T
   def visit(it: Prefix): T
@@ -113,6 +114,7 @@ object Dispatch {
           case it: Quote => v.visit(it)
           case it: Tuple => v.visit(it)
           case it: Sequence => v.visit(it)
+          case it: ArithmeticSequence => v.visit(it)
           case it: SequenceComprehension => v.visit(it)
           case it: Binop => v.visit(it)
           case it: Prefix => v.visit(it)
@@ -182,6 +184,7 @@ object Visitors {
     override def visit(it: Binop): Expr    =  { import it._; Binop(op, Detuple(l), Detuple(r)) }
     override def visit(it: Assoc): Expr    =  { import it._; Assoc(op, exprs.map(Detuple(_))) }
     override def visit(it: Sequence): Expr =  Sequence(it.exprs.map(Detuple(_)))
+    override def visit(it: ArithmeticSequence): Expr = { import it._; ArithmeticSequence(Detuple(start), next.map(Detuple(_)), end.map(Detuple(_))) }
     override def visit(it: SequenceComprehension): Expr = {
       import it._
       SequenceComprehension(
@@ -300,6 +303,10 @@ object Formatting {
     def visit(it: Sequence): Layout.Box = {
       val boxes = it.exprs.map(ExprFormat(_))           // (_.visit(ExprFormat))
       bracketed("[".t, boxes, "]".t)
+    }
+
+    def visit(it: ArithmeticSequence): Layout.Box = {
+      it.source.text
     }
 
     def visit(it: SequenceComprehension): Layout.Box = {

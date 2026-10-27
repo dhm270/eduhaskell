@@ -154,7 +154,7 @@
 }
 
 %token ID(String) INT(Long) REAL(Double) STRING(eduhaskell.syntax.Quotation) NL LEXICALERROR(String) ENDOFFILE
-%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|` `->` `<-`
+%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|` `->` `<-` `..`
 %token `if` `then` `else` `let` `in` `case` `of`
 
 %prec  LOWEST
@@ -279,6 +279,7 @@ simpleExpression: Expr = ID { Id($ID) }
                          | '[' ']' { Sequence(Nil) }
                          | '(' maybeEOL expressions maybeEOL ')' { Tuple($expressions) }
                          | '[' maybeEOL expressions maybeEOL ']' { Sequence($expressions) }
+                         | arithmeticSequence 
                          | '[' maybeEOL expression maybeEOL '|' maybeEOL qualifiers maybeEOL ']' { SequenceComprehension($expression, $qualifiers) }
                          | error => ()
 
@@ -286,6 +287,11 @@ qualifiers: List[(Expr, Expr)] = qualifier { List($qualifier) }
                                  | qualifier maybeEOL ',' maybeEOL qualifiers { $qualifier :: $qualifiers }
 
 qualifier: (Expr, Expr) = pattern:pattern '<-' expression { ($pattern, $expression) }
+
+arithmeticSequence: Expr = '[' maybeEOL expression '..' maybeEOL ']' { ArithmeticSequence($expression, None, None) }
+                           | '[' maybeEOL start:expression '..' end:expression maybeEOL ']' { ArithmeticSequence($start, None, Some($end)) }
+                           | '[' maybeEOL start:expression ',' next:expression '..' maybeEOL ']' { ArithmeticSequence($start, Some($next), None) }
+                           | '[' maybeEOL start:expression ',' next:expression '..' end:expression maybeEOL ']' { ArithmeticSequence($start, Some($next), Some($end)) }
 
 guardedEquation: GuardedEquation = pattern:pattern '|' rhss:RHSs where:whereClause { GuardedEquation($pattern, $rhss, $where) }
 

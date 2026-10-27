@@ -89,6 +89,10 @@
         bracketed("[".t, boxes, "]".t)
       }
 
+      def visit(it: ArithmeticSequence): Layout.Box = {
+        it.source.text
+      }
+
       def visit(it: SequenceComprehension): Layout.Box = {
         it.source.text
       }

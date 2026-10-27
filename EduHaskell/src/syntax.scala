@@ -47,6 +47,10 @@ object syntax {
         lazy val source = exprs.mkString("[", ", ", "]")
     }
 
+    case class ArithmeticSequence(start: Expr, next: Option[Expr], end: Option[Expr]) extends Expr {
+        lazy val source = s"[${start.source}${if (next.isDefined) s",${next.get.source}" else ""}..${if (end.isDefined) end.get.source else ""}]"
+    }
+
     case class SequenceComprehension(expr: Expr, qualifiers: Seq[(Expr, Expr)]) extends Expr {
         lazy val source = s"[${expr.source} | ${qualifiers.map({ case (a, b) => a.source + " <- " + b.source }).mkString(", ")}]"
     }

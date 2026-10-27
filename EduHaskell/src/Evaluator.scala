@@ -88,6 +88,7 @@ object Evaluator {
                 }
                 result
             }
+            case ArithmeticSequence(start, next, end) => evaluateArithmeticSequence(env, start, next, end)
             // case SequenceComprehension(expr, qualifiers) => ...
 
             case Binop(op, l, r) => evaluateBinop(env, op, l, r)
@@ -130,6 +131,66 @@ object Evaluator {
             }
 
             case Bra(e) => evaluate(env, e)
+        }
+    }
+
+    def generateIntArithmeticSequence(start: Long, step: Long, end: Option[Long]): Value = {
+        if (end.isDefined && start > end.get) {
+            NilValue()
+        } else {
+            lazy val restOfSequence = generateIntArithmeticSequence(start + step, step, end)
+            ConsValue(IntValue(start), restOfSequence)
+        }
+    }
+
+    def generateRealArithmeticSequence(start: Double, step: Double, end: Option[Double]): Value = {
+        if (end.isDefined && start > end.get) {
+            NilValue()
+        } else {
+            lazy val restOfSequence = generateRealArithmeticSequence(start + step, step, end)
+            ConsValue(RealValue(start), restOfSequence)
+        }
+    }
+
+    def evaluateArithmeticSequence(env: Environment, start: Expr, next: Option[Expr], end: Option[Expr]): Value = {
+        val startValue = evaluate(env, start)
+        startValue match {
+            case IntValue(int) => {
+                val start = int
+                var step: Long = 1
+                if (next.isDefined) {
+                    val nextValue = evaluate(env, next.get)
+                    nextValue match {
+                        case IntValue(next) => step = next - start
+                    }
+                }
+                var extractedEnd: Option[Long] = None
+                if (end.isDefined) {
+                    val endValue = evaluate(env, end.get)
+                    endValue match {
+                        case IntValue(endInt) => extractedEnd = Some(endInt)
+                    }
+                }
+                generateIntArithmeticSequence(start, step, extractedEnd)
+            }
+            case RealValue(real) => {
+                val start = real
+                var step: Double = 1.0
+                if (next.isDefined) {
+                    val nextValue = evaluate(env, next.get)
+                    nextValue match {
+                        case RealValue(next) => step = next - start
+                    }
+                }
+                var extractedEnd: Option[Double] = None
+                if (end.isDefined) {
+                    val endValue = evaluate(env, end.get)
+                    endValue match {
+                        case RealValue(endReal) => extractedEnd = Some(endReal)
+                    }
+                }
+                generateRealArithmeticSequence(start, step, extractedEnd)
+            }
         }
     }
 
