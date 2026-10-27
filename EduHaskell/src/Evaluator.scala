@@ -55,7 +55,7 @@ object Evaluator {
         }
     }
 
-    def evaluate(env: Environment, e: TREE): Value = {
+    def evaluate(env: Environment, e: Expr): Value = {
         e match {
             case Id(name) => env.find(name)
 

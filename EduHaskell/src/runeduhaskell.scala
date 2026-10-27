@@ -28,6 +28,8 @@ object RunEduHaskell {
         val input = SourceTextCursor(Path.of(path))
         val scanner = makeScanner(input)
 
+        var replEnv = Environment.empty
+
         while (state == RUNNING) {
             print("> ")
             val parser = LRParser.Pull[Token](Components)(scanner.sourceLocation)
@@ -41,8 +43,14 @@ object RunEduHaskell {
                     println(message)
                     if (interactive) state = RUNNING
                 case INSTRUCTED(instruction) =>
-                    print("< ")
-                    println(Evaluator.evaluate(Environment.empty, instruction.asInstanceOf[TREE]))
+                    if (instruction.isInstanceOf[Expr]) {
+                        print("< ")
+                        println(Evaluator.evaluate(replEnv, instruction.asInstanceOf[Expr]))
+                    } else if (instruction.isInstanceOf[Definition]) {
+                        replEnv = Evaluator.withDefinition(replEnv, instruction.asInstanceOf[Definition])
+                    } else {
+                        println("wot?")
+                    }
                     println()
                     state = RUNNING
                 case ACCEPTED(()) =>
