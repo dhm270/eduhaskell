@@ -319,6 +319,36 @@ class ParserTests extends munit.FunSuite {
         assert(structureMatches(result, expectedResult))
     }
 
+    test("Parse f x = x + 2") {
+        val result = parse("f x = x + 2")
+        val expectedResult = Equation(
+            Apply(Id("f"), Id("x")),
+            Binop("+", Id("x"), Num(2))
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse f x y = x + y") {
+        val result = parse("f x y = x + y")
+        val expectedResult = Equation(
+            Apply(Apply(Id("f"), Id("x")), Id("y")),
+            Binop("+", Id("x"), Id("y"))
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
+    test("Parse let-in containing function definition") {
+        val result = parse("let f x y = x + y in f 1 2")
+        val expectedResult = Where(
+            Apply(Apply(Id("f"), Num(1)), Num(2)),
+            List(Equation(
+                Apply(Apply(Id("f"), Id("x")), Id("y")),
+                Binop("+", Id("x"), Id("y"))
+            ))
+        )
+        assert(structureMatches(result, expectedResult))
+    }
+
     test("Parse f :: a") {
         val result = parse("f :: a")
         val expectedResult = TypeDef(List(Id("f")), Id("a"))
