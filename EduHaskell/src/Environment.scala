@@ -29,6 +29,14 @@ case class FunctionValue(func: Value => Value) extends Value {
     lazy val source = "<function value>"
 }
 
+case class ConsValue(head: Value, tail: Value) extends Value {
+    lazy val source = s"${head.source} : ${tail.source}"
+}
+
+case class NilValue() extends Value {
+    lazy val source = "nil"
+}
+
 class Environment(private var map: Map[String, () => Value]) {
     def find(ident: String): Value = {
         map(ident)()

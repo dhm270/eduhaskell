@@ -78,7 +78,16 @@ object Evaluator {
                 }
             }
 
-            // case Sequence(exprs) => ...
+            case Sequence(exprs) => {
+                var remaining = exprs.reverse
+                var result: Value = NilValue()
+                while (remaining.length > 0) {
+                    lazy val itemValue = evaluate(env, remaining(0))
+                    result = ConsValue(itemValue, result)
+                    remaining = remaining.drop(1)
+                }
+                result
+            }
             // case SequenceComprehension(expr, qualifiers) => ...
 
             case Binop(op, l, r) => evaluateBinop(env, op, l, r)
@@ -197,6 +206,10 @@ object Evaluator {
                         }
                     }
                 }
+            }
+            case ":" => {
+                // TODO: some kind of type checking
+                ConsValue(lValue, rValue)
             }
             case "==" => {
                 lValue match {
