@@ -8,14 +8,20 @@ object Evaluator {
         defn match {
             case Equation(lhs, rhs) => {
                 lhs match {
-                    case Id(name) => env.define(name, evaluate(env, rhs))
+                    case Id(name) => {
+                        lazy val value = evaluate(env, rhs)
+                        env.define(name, value)
+                    }
                     case Apply(l, r) => {
                         val exprs = flattenApply(lhs)
                         exprs(0) match {
                             case Id(funcName) => {
                                 val asPartialFun = createPartialFun(lhs, rhs)
-                                lazy val lambdaValue = evaluate(env, asPartialFun)
-                                env.define(funcName, lambdaValue)
+                                lazy val newEnv: Environment = {
+                                    lazy val value = evaluate(newEnv, asPartialFun)
+                                    env.lazyDefine(funcName, () => value)
+                                }
+                                newEnv
                             }
                         }
                     }

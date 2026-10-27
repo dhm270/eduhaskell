@@ -29,13 +29,17 @@ case class FunctionValue(func: Value => Value) extends Value {
     lazy val source = "<function value>"
 }
 
-class Environment(private var map: Map[String, Value]) {
+class Environment(private var map: Map[String, () => Value]) {
     def find(ident: String): Value = {
-        map(ident)
+        map(ident)()
     }
 
     def define(ident: String, value: Value): Environment = {
-        new Environment(this.map.updated(ident, value))
+        new Environment(this.map.updated(ident, () => value))
+    }
+
+    def lazyDefine(ident: String, getter: () => Value): Environment = {
+        new Environment(this.map.updated(ident, getter))
     }
 
     def defineMultiple(idents: List[String], values: List[Value]): Environment = {
