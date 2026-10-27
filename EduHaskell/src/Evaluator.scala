@@ -7,20 +7,18 @@ object Evaluator {
     def withDefinition(env: Environment, defn: Definition): Environment = {
         defn match {
             case Equation(lhs, rhs) => {
-                if (lhs.length == 1) {
-                    lhs(0) match {
-                        case Id(name) => env.define(name, evaluate(env, rhs))
-                    }
-                } else if (lhs.length > 1) {
-                    lhs(0) match {
-                        case Id(funcName) => {
-                            val asLambda = PartialFun(lhs.drop(1), None, rhs)
-                            lazy val lambdaValue = evaluate(env, asLambda)
-                            env.define(funcName, lambdaValue)
+                lhs match {
+                    case Id(name) => env.define(name, evaluate(env, rhs))
+                    case Apply(l, r) => {
+                        val exprs = flattenApply(lhs)
+                        exprs(0) match {
+                            case Id(funcName) => {
+                                val asPartialFun = createPartialFun(lhs, rhs)
+                                lazy val lambdaValue = evaluate(env, asPartialFun)
+                                env.define(funcName, lambdaValue)
+                            }
                         }
                     }
-                } else {
-                    env
                 }
             }
         }
@@ -28,6 +26,33 @@ object Evaluator {
 
     def withDefinitions(env: Environment, defs: Seq[Definition]): Environment = {
         defs.foldLeft(env)((acc, curr) => withDefinition(acc, curr))
+    }
+
+    def getLeftmostArgument(e: Expr): Expr = {
+        e match {
+            case Apply(Apply(l1, l2), r) => getLeftmostArgument(Apply(l1, l2))
+            case Apply(l, r) => l
+        }
+    }
+
+    def createPartialFun(lhs: Expr, rhs: Expr): Expr = {
+        def removeFirst(e: Expr): Expr = {
+            e match {
+                case Apply(Apply(l1, l2), r) => Apply(removeFirst(Apply(l1, l2)), r)
+                case Apply(_, r) => r
+            }
+        }
+        val editedLhs = removeFirst(lhs)
+        PartialFun(editedLhs, None, rhs)
+    }
+
+    def flattenApply(e: Expr): List[Expr] = {
+        e match {
+            case Apply(l, r) => {
+                flattenApply(l) ++ List(r)
+            }
+            case _ => List(e)
+        }
     }
 
     def evaluate(env: Environment, e: TREE): Value = {
@@ -60,22 +85,22 @@ object Evaluator {
             case Where(e, defs) => evaluate(withDefinitions(env, defs), e)
 
             case PartialFun(pattern, guard, expr) => {
-                if (pattern.length == 1) {
-                    pattern(0) match {
-                        case Id(name) => {
-                            def func(value: Value): Value = {
-                                evaluate(env.define(name, value), expr)
-                            }
-                            FunctionValue(func)
+                pattern match {
+                    case Id(name) => {
+                        def func(value: Value): Value = {
+                            evaluate(env.define(name, value), expr)
                         }
+                        FunctionValue(func)
                     }
-                } else {
-                    pattern(0) match {
-                        case Id(name) => {
-                            def func(value: Value): Value = {
-                                evaluate(env.define(name, value), PartialFun(pattern.drop(1), guard, expr))
+                    case Apply(l, r) => {
+                        val argument = getLeftmostArgument(pattern)
+                        argument match {
+                            case Id(name) => {
+                                def func(value: Value): Value = {
+                                    evaluate(env.define(name, value), createPartialFun(pattern, expr))
+                                }
+                                FunctionValue(func)
                             }
-                            FunctionValue(func)
                         }
                     }
                 }

@@ -202,7 +202,7 @@
         clause
     }
 
-    def MakeEquation(lhs: Seq[Expr], rhs: Expr): Definition = {
+    def MakeEquation(lhs: Expr, rhs: Expr): Definition = {
         rhs match {
             case Where(expression, equations) => WhereEquation(lhs, expression, equations)
             case _                            => Equation(lhs, rhs)
@@ -237,10 +237,7 @@ expr: Expr = cases | lambda | expression
 
 lambda: Expr = '\' pattern:pattern guard:(guard)? '->' maybeEOL expression:expr { Function(List(PartialFun($pattern, $guard, $expression))) }
 
-patternBackwards: List[Expr] = simpleExpression { List($simpleExpression) }
-                               | patternBackwards simpleExpression { $simpleExpression :: $patternBackwards }
-
-pattern: List[Expr] = patternBackwards { $patternBackwards.reverse }
+pattern: Expr = expression
 
 expression: Expr = application
                    | binopExpression
