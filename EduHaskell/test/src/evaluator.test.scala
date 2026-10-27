@@ -76,4 +76,10 @@ class EvaluatorTests extends munit.FunSuite {
         val expectedResult = IntValue(5)
         assert(result == expectedResult)
     }
+
+    test("Evaluate recursive function definition") {
+        val result = parseAndEvaluate("let fact n = if n == 1 then 1 else n * fact (n - 1) in fact 5")
+        val expectedResult = IntValue(120)
+        assert(result == expectedResult)
+    }
 }
