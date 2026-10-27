@@ -75,9 +75,9 @@ object syntax {
         lazy val source = s"${e.source} where ${ defs.map(_.source).mkString("; ") }"
     }
 
-    case class PartialFun(pattern: Expr, guard: Option[Expr], expr: Expr) extends Expr {
+    case class PartialFun(pattern: Seq[Expr], guard: Option[Expr], expr: Expr) extends Expr {
         private lazy val guardSource = if (guard.isDefined) s" | ${guard.get} " else ""
-        lazy val source = s"${pattern.source}$guardSource->${expr.source}"
+        lazy val source = s"${pattern.map(_.source).mkString(" ")}$guardSource->${expr.source}"
     }
 
     case class Function(alts: Seq[PartialFun]) extends Expr {
@@ -98,12 +98,12 @@ object syntax {
 
     sealed trait Definition extends TREE
 
-    case class Equation(lhs: Expr, rhs: Expr) extends Definition {
-        lazy val source = s"$lhs = $rhs"
+    case class Equation(lhs: Seq[Expr], rhs: Expr) extends Definition {
+        lazy val source = s"${lhs.map(_.source).mkString(" ")} = $rhs"
     }
 
-    case class GuardedEquation(pattern: Expr, cases: Seq[GuardedResult], definitions: Seq[Definition]) extends Definition {
-        lazy val body = s"${pattern.source} ${cases.map(_.toString).mkString(" | ", " | ", "")}"
+    case class GuardedEquation(pattern: Seq[Expr], cases: Seq[GuardedResult], definitions: Seq[Definition]) extends Definition {
+        lazy val body = s"${pattern.map(_.source).mkString(" ")} ${cases.map(_.toString).mkString(" | ", " | ", "")}"
         lazy val wheres = definitions.map(_.source) match {
             case Nil => ""
             case clauses => clauses.mkString(" where {", ";", "}")
@@ -119,8 +119,8 @@ object syntax {
         lazy val source = s"${symbols.mkString(", ")} :: $rhs"
     }
 
-    case class WhereEquation(lhs: Expr, rhs: Expr, defs: Seq[Definition]) extends Definition {
-        lazy val source = s"${lhs.source} = ${rhs.source} where ${defs.map(_.source).mkString("; ")}"
+    case class WhereEquation(lhs: Seq[Expr], rhs: Expr, defs: Seq[Definition]) extends Definition {
+        lazy val source = s"${lhs.map(_.source).mkString(" ")} = ${rhs.source} where ${defs.map(_.source).mkString("; ")}"
     }
 }
 

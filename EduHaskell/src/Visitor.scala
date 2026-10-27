@@ -199,7 +199,7 @@ object Visitors {
    */
   class Distribute(visitor: ExprVisitor[Expr]) extends DefinitionVisitor[Definition] { distribute =>
     import Dispatch._
-    def visit(it: Equation): Definition = Equation(it.lhs.visit(visitor), it.rhs.visit(visitor))
+    def visit(it: Equation): Definition = Equation(it.lhs.map(_.visit(visitor)), it.rhs.visit(visitor))
 
     def visit(it: GuardedEquation): Definition =
       GuardedEquation(it.pattern,
@@ -208,7 +208,7 @@ object Visitors {
       )
 
     def visit(it: WhereEquation): Definition =
-      WhereEquation(it.lhs.visit(visitor), it.rhs.visit(visitor), it.defs.map(_.visit(distribute)))
+      WhereEquation(it.lhs.map(_.visit(visitor)), it.rhs.visit(visitor), it.defs.map(_.visit(distribute)))
 
     def visit(it: TypeDef): Definition = it
   }
@@ -233,12 +233,15 @@ object Formatting {
 
 
 
-    def visit(it: Equation): Layout.Box = // Group(it.lhs.visit(ExprFormat) <+> text("=") + Nest(2, softNL + it.rhs.visit(ExprFormat)))
-      (ExprFormat(it.lhs) <+> "=".text + (softNL + ExprFormat(it.rhs)).nest(2)).group
+    def visit(it: Equation): Layout.Box = {// Group(it.lhs.visit(ExprFormat) <+> text("=") + Nest(2, softNL + it.rhs.visit(ExprFormat)))
+      val lhs = it.lhs.map(ExprFormat(_))
+      (lhs.sep(" ".t).nest(2) <+> "=".text + (softNL + ExprFormat(it.rhs)).nest(2)).group
+    }
 
     def visit(it: WhereEquation): Layout.Box = {
+      val lhs = it.lhs.map(ExprFormat(_))
       val body = it.defs.map(DefinitionFormat(_))
-      ((ExprFormat(it.lhs) <+> "=".t <+> ExprFormat(it.rhs).group +
+      ((lhs.sep(" ".t).nest(2) <+> "=".t <+> ExprFormat(it.rhs).group +
              (softNL + "where {".t + softNL + body.sep(";".t + softNL).nest(2) + softNL + "}".t).nest(2))).group
     }
 
@@ -306,7 +309,7 @@ object Formatting {
     }
 
     def visit(it: PartialFun): Layout.Box = {
-      val pat   = ExprFormat(it.pattern)
+      val pat   = it.pattern.map(ExprFormat(_)).sep(" ".t).nest(2)
       val guard = it.guard match {
         case None => empty
         case Some(guard) => ("| ".t + ExprFormat(guard)).group

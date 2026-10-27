@@ -25,6 +25,10 @@ case class BooleanValue(value: Boolean) extends Value {
     lazy val source = value.toString
 }
 
+case class FunctionValue(func: Value => Value) extends Value {
+    lazy val source = "<function value>"
+}
+
 class Environment(private var map: Map[String, Value]) {
     def find(ident: String): Value = {
         map(ident)
@@ -36,10 +40,14 @@ class Environment(private var map: Map[String, Value]) {
 
     def defineMultiple(idents: List[String], values: List[Value]): Environment = {
         if (idents.length == values.length) {
-            idents.zip(values).fold(this)((acc, curr) => curr match { case (ident, value) => acc.define(ident, value) })
+            idents.zip(values).foldLeft(this)((acc, curr) => curr match { case (ident, value) => acc.define(ident, value) })
         } else {
             // TODO
             this
         }
     }
+}
+
+object Environment {
+    def empty: Environment = new Environment(Map())
 }

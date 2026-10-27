@@ -42,7 +42,7 @@ object RunEduHaskell {
                     if (interactive) state = RUNNING
                 case INSTRUCTED(instruction) =>
                     print("< ")
-                    println(Evaluator.evaluate(new Environment(), instruction.asInstanceOf[TREE]))
+                    println(Evaluator.evaluate(Environment.empty, instruction.asInstanceOf[TREE]))
                     println()
                     state = RUNNING
                 case ACCEPTED(()) =>
