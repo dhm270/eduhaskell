@@ -224,16 +224,15 @@ SEMI: () = ';' { () }
            | NL { () }
            | ';' NL { () }
 
-whereExpr: Expr = expr { $expr }
-                  | expr `where` equation { Where($expr, List($equation)) }
+whereExpr: Expr = expr `where` equation { Where($expr, List($equation)) }
                   | expr `where` '{' maybeEOL equations maybeEOL '}' { Where($expr, $equations.reverse) }
 
 equations: List[Definition] = equations SEMI equation { $equation :: $equations }
                               | equation { List($equation) }
 
-equation: Definition = lhs:pattern '=' maybeEOL rhs:whereExpr { MakeEquation($lhs, $rhs) }
+equation: Definition = lhs:pattern '=' maybeEOL rhs:expr { MakeEquation($lhs, $rhs) }
 
-expr: Expr = cases | lambda | expression
+expr: Expr = cases | lambda | expression | whereExpr
 
 lambda: Expr = '\' pattern:pattern guard:(guard)? '->' maybeEOL expression:expr { Function(List(PartialFun($pattern, $guard, $expression))) }
 
