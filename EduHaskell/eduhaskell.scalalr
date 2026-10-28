@@ -278,8 +278,7 @@ simpleExpression: Expr = ID { Id($ID) }
                          | '(' ')' { Tuple(Nil) }
                          | '[' ']' { Sequence(Nil) }
                          | '(' maybeEOL expressions maybeEOL ')' { Tuple($expressions) }
-                         | '[' maybeEOL expressions maybeEOL ']' { Sequence($expressions) }
-                         | arithmeticSequence 
+                         | '[' maybeEOL expressionsOrDoubleDot maybeEOL ']' { Sequence($expressionsOrDoubleDot) }
                          | '[' maybeEOL expression maybeEOL '|' maybeEOL qualifiers maybeEOL ']' { SequenceComprehension($expression, $qualifiers) }
                          | error => ()
 
@@ -287,11 +286,6 @@ qualifiers: List[(Expr, Expr)] = qualifier { List($qualifier) }
                                  | qualifier maybeEOL ',' maybeEOL qualifiers { $qualifier :: $qualifiers }
 
 qualifier: (Expr, Expr) = pattern:pattern '<-' expression { ($pattern, $expression) }
-
-arithmeticSequence: Expr = '[' maybeEOL expression '..' maybeEOL ']' { ArithmeticSequence($expression, None, None) }
-                           | '[' maybeEOL start:expression '..' end:expression maybeEOL ']' { ArithmeticSequence($start, None, Some($end)) }
-                           | '[' maybeEOL start:expression ',' next:expression '..' maybeEOL ']' { ArithmeticSequence($start, Some($next), None) }
-                           | '[' maybeEOL start:expression ',' next:expression '..' end:expression maybeEOL ']' { ArithmeticSequence($start, Some($next), Some($end)) }
 
 guardedEquation: GuardedEquation = pattern:pattern '|' rhss:RHSs where:whereClause { GuardedEquation($pattern, $rhss, $where) }
 
@@ -315,10 +309,15 @@ partialFunction: PartialFun = pattern:pattern guard:(guard)? '->' expression:exp
 
 guard: Expr = '|' expr
 
-expressions: List[Expr] = expr ',' maybeEOL expressions => $expr :: $expressions
+expressions: List[Expr] = expr ',' maybeEOL expressions { $expr :: $expressions }
                           | expr { List($expr) }
 
-typeDef: TypeDef = symbols: (symbol ',')+ '::' typeExpr => TypeDef($symbols, $typeExpr)
+expressionsOrDoubleDot: List[Expr] = expr ',' maybeEOL expressionsOrDoubleDot { $expr :: $expressionsOrDoubleDot }
+                                     | expr { List($expr) }
+                                     | expr '..' { List($expr, DoubleDot()) }
+                                     | expr1:expr '..' expr2:expr { List($expr1, DoubleDot(), $expr2) }
+
+typeDef: TypeDef = symbols: (symbol ',')+ '::' typeExpr { TypeDef($symbols, $typeExpr) }
 
 typeExpr: Expr = l:typeExpr "->" r:typeExpr { Binop("->", $l, $r) }
                  | ID { Id($ID) }

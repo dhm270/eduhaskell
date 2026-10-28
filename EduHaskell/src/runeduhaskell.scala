@@ -49,7 +49,7 @@ object RunEduHaskell {
                     } else if (instruction.isInstanceOf[Definition]) {
                         replEnv = Evaluator.withDefinition(replEnv, instruction.asInstanceOf[Definition])
                     } else {
-                        println("wot?")
+                        throw new Exception("Invalid state")
                     }
                     println()
                     state = RUNNING

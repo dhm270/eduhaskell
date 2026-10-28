@@ -55,6 +55,7 @@ trait ExprVisitor[T] { thisVisitor =>
   def visit(it: Tuple): T
   def visit(it: Sequence): T
   def visit(it: ArithmeticSequence): T
+  def visit(it: DoubleDot): T
   def visit(it: SequenceComprehension): T
   def visit(it: Binop): T
   def visit(it: Prefix): T
@@ -115,6 +116,7 @@ object Dispatch {
           case it: Tuple => v.visit(it)
           case it: Sequence => v.visit(it)
           case it: ArithmeticSequence => v.visit(it)
+          case it: DoubleDot => v.visit(it)
           case it: SequenceComprehension => v.visit(it)
           case it: Binop => v.visit(it)
           case it: Prefix => v.visit(it)
@@ -165,6 +167,7 @@ object Visitors {
     def visit(it: Function): T = it
     def visit(it: Bra): T = it
     def visit(it: Assoc): T = it
+    def visit(it: DoubleDot): T = it
   }
 
   /**
@@ -306,6 +309,10 @@ object Formatting {
     }
 
     def visit(it: ArithmeticSequence): Layout.Box = {
+      it.source.text
+    }
+
+    def visit(it: DoubleDot): Layout.Box = {
       it.source.text
     }
 

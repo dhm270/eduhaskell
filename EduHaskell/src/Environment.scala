@@ -7,14 +7,17 @@ import eduhaskell.syntax._
 trait Value {
     val source: String
     override lazy val toString: String = source
+    def isNumber(): Boolean = false
 }
 
 case class IntValue(value: Long) extends Value {
     lazy val source = value.toString
+    override def isNumber(): Boolean = true
 }
 
 case class RealValue(value: Double) extends Value {
     lazy val source = value.toString
+    override def isNumber(): Boolean = true
 }
 
 case class StringValue(value: Quotation) extends Value {

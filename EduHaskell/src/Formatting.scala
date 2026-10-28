@@ -93,6 +93,10 @@
         it.source.text
       }
 
+      def visit(it: DoubleDot): Layout.Box = {
+        it.source.text
+      }
+
       def visit(it: SequenceComprehension): Layout.Box = {
         it.source.text
       }

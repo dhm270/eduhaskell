@@ -78,16 +78,7 @@ object Evaluator {
                 }
             }
 
-            case Sequence(exprs) => {
-                var remaining = exprs.reverse
-                var result: Value = NilValue()
-                while (remaining.length > 0) {
-                    lazy val itemValue = evaluate(env, remaining(0))
-                    result = ConsValue(itemValue, result)
-                    remaining = remaining.drop(1)
-                }
-                result
-            }
+            case Sequence(exprs) => evaluateSequence(env, exprs)
             case ArithmeticSequence(start, next, end) => evaluateArithmeticSequence(env, start, next, end)
             // case SequenceComprehension(expr, qualifiers) => ...
 
@@ -131,6 +122,40 @@ object Evaluator {
             }
 
             case Bra(e) => evaluate(env, e)
+        }
+    }
+
+    def evaluateSequence(env: Environment, exprs: Seq[Expr]): Value = {
+        if (exprs.exists(_.isInstanceOf[DoubleDot])) {
+            if (exprs(0).isInstanceOf[DoubleDot]) throw new Exception("Parse error on sequence")
+            val start = exprs(0)
+            var next: Option[Expr] = None
+            var end: Option[Expr] = None
+            if (exprs(1).isInstanceOf[DoubleDot]) {
+                if (exprs.length == 3) {
+                    end = Some(exprs(2))
+                } else if (exprs.length > 3) {
+                    throw new Exception("Parse error on sequence")
+                }
+            } else {
+                next = Some(exprs(1))
+                if (!exprs(2).isInstanceOf[DoubleDot]) throw new Exception("Parse error on sequence")
+                if (exprs.length == 4) {
+                    end = Some(exprs(3))
+                } else if (exprs.length > 4) {
+                    throw new Exception("Parse error on sequence")
+                }
+            }
+            evaluateArithmeticSequence(env, start, next, end)
+        } else {
+            var remaining = exprs.reverse
+            var result: Value = NilValue()
+            while (remaining.length > 0) {
+                lazy val itemValue = evaluate(env, remaining(0))
+                result = ConsValue(itemValue, result)
+                remaining = remaining.drop(1)
+            }
+            result
         }
     }
 
