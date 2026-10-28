@@ -55,7 +55,34 @@
             nextChar()
         }
 
+        def nextNumberOrDoubleDot(intPart: Seq[Char]): Seq[Token] = {
+            if (hasChar && (theChar == '.' || theChar == 'e')) {
+                val dot = chars.takeIf(c => c == '.')
+                if (theChar == '.') {
+                    // Double dot
+                    nextChar()
+                    val doubleDotToken = tokenPrefixMap.longestPrefixMatch("..") match {
+                        case Some((tok, edges)) => tok
+                    }
+                    List(mkDec(intPart), doubleDotToken)
+                } else {
+                    val fracPart = dot ++ chars.takeWhile(c => c.isDigit)
+                    val exp = chars.takeIf(c => c.toLower == 'e')
+                    val neg = chars.takeIf(c => c == '-')
+                    val expPart = if (exp.isEmpty) Seq() else exp ++ neg ++ chars.takeWhile(c => c.isDigit)
+                    List(mkReal(intPart ++ fracPart ++ expPart))
+                }
+            } else List(mkDec(intPart))
+        }
+
+        var tokenBuffer: Option[Token] = None
+
         override def next(): Token = if (hasChar) {
+            if (tokenBuffer.isDefined) {
+                val token = tokenBuffer.get
+                tokenBuffer = None
+                return token
+            }
             lastLocation = SourceLocation(chars.lines, chars.chars)
             theChar match {
                 case c if c.isLetter =>
@@ -70,11 +97,23 @@
                             nextChar()
                             mkHex(chars.takeWhile(c => c.isDigit || ("abcdef" contains c.toLower)))
                         case other =>
-                            nextNumber(chars.takeWhile(c => c.isDigit).prepended('0'))
+                            val numberResult = nextNumberOrDoubleDot(chars.takeWhile(c => c.isDigit).prepended('0'))
+                            if (numberResult.length == 1) {
+                                numberResult(0)
+                            } else {
+                                tokenBuffer = Some(numberResult(1))
+                                numberResult(0)
+                            }
                     }
                 case c if c.isDigit =>
                     val intPart = chars.takeWhile(c => c.isDigit)
-                    nextNumber(intPart)
+                    val numberResult = nextNumberOrDoubleDot(intPart)
+                    if (numberResult.length == 1) {
+                        numberResult(0)
+                    } else {
+                        tokenBuffer = Some(numberResult(1))
+                        numberResult(0)
+                    }
 
                 case '\u0004' =>
                     ENDSTREAM
