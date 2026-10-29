@@ -67,6 +67,7 @@ object Evaluator {
 
     def evaluate(env: Environment, e: Expr): Either[Error, Value] = {
         e match {
+            case Op(name) => Left(NotImplemented())
             case Id(name) => env.find(name)
 
             case Num(value) => Right(IntValue(value))
@@ -78,20 +79,21 @@ object Evaluator {
                     evaluate(env, exprs(0))
                 } else {
                     // TODO
-                    Right(BooleanValue(false))
+                    Left(NotImplemented())
                 }
             }
 
             case Sequence(exprs) => evaluateSequence(env, exprs)
             case ArithmeticSequence(start, next, end) => evaluateArithmeticSequence(env, start, next, end)
-            // case SequenceComprehension(expr, qualifiers) => ...
+            case DoubleDot() => Left(SyntaxError("`..` cannot appear here"))
+            case SequenceComprehension(expr, qualifiers) => Left(NotImplemented())
 
             case Binop(op, l, r) => evaluateBinop(env, op, l, r)
             case Prefix(op, e) => evaluatePrefix(env, op, e)
             case Apply(l, r) => evaluateApply(env, l, r)
             case If(condition, trueExpr, falseExpr) => evaluateIf(env, condition, trueExpr, falseExpr)
 
-            // case Case(query, alts) => ...
+            case Case(query, alts) => Left(NotImplemented())
 
             case Where(e, defs) => evaluate(withDefinitions(env, defs), e)
 
@@ -121,11 +123,12 @@ object Evaluator {
                 if (alts.length == 1) {
                     evaluate(env, alts(0))
                 } else {
-                    Right(BooleanValue(false))
+                    Left(NotImplemented())
                 }
             }
 
             case Bra(e) => evaluate(env, e)
+            case Assoc(op, exprs) => Left(NotImplemented())
         }
     }
 
@@ -187,13 +190,15 @@ object Evaluator {
     def evaluateArithmeticSequence(env: Environment, start: Expr, next: Option[Expr], end: Option[Expr]): Either[Error, Value] = {
         val startValue = evaluate(env, start)
         startValue match {
-            case Right(IntValue(int)) => {
+            case Right(s @ IntValue(int)) => {
                 val start = int
                 var step: Long = 1
                 if (next.isDefined) {
                     val nextValue = evaluate(env, next.get)
                     nextValue match {
                         case Right(IntValue(next)) => step = next - start
+                        case Right(r) => return Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, next is of type ${r.getType()}"))
+                        case x => return x
                     }
                 }
                 var extractedEnd: Option[Long] = None
@@ -201,17 +206,21 @@ object Evaluator {
                     val endValue = evaluate(env, end.get)
                     endValue match {
                         case Right(IntValue(endInt)) => extractedEnd = Some(endInt)
+                        case Right(r) => return Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, end is of type ${r.getType()}"))
+                        case x => return x
                     }
                 }
                 generateIntArithmeticSequence(start, step, extractedEnd)
             }
-            case Right(RealValue(real)) => {
+            case Right(s @ RealValue(real)) => {
                 val start = real
                 var step: Double = 1.0
                 if (next.isDefined) {
                     val nextValue = evaluate(env, next.get)
                     nextValue match {
                         case Right(RealValue(next)) => step = next - start
+                        case Right(r) => return Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, next is of type ${r.getType()}"))
+                        case x => return x
                     }
                 }
                 var extractedEnd: Option[Double] = None
@@ -219,10 +228,14 @@ object Evaluator {
                     val endValue = evaluate(env, end.get)
                     endValue match {
                         case Right(RealValue(endReal)) => extractedEnd = Some(endReal)
+                        case Right(r) => return Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, end is of type ${r.getType()}"))
+                        case x => return x
                     }
                 }
                 generateRealArithmeticSequence(start, step, extractedEnd)
             }
+            case Right(s) => Left(TypeError(s"cannot declare an arithmetic sequence of type ${s.getType()}"))
+            case x => x
         }
     }
 
@@ -294,14 +307,14 @@ object Evaluator {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => Right(IntValue(int1 / int2))
+                            case Right(IntValue(int2)) => if (int2 == 0) { Left(DivisionByZero()) } else { Right(IntValue(int1 / int2)) }
                             case Right(r) => Left(TypeError(s"operands of / have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
                             case x => x
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => Right(RealValue(real1 / real2))
+                            case Right(RealValue(real2)) => if (real2 == 0) { Left(DivisionByZero()) } else { Right(RealValue(real1 / real2)) }
                             case Right(r) => Left(TypeError(s"operands of / have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
                             case x => x
                         }
@@ -467,6 +480,7 @@ object Evaluator {
         conditionValue match {
             case Right(BooleanValue(bool)) => if (bool) { evaluate(env, trueExpr) } else { evaluate(env, falseExpr) }
             case Right(x) => Left(TypeError(s"if-statement condition is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}"))
+            case x => x
         }
     }
 }
