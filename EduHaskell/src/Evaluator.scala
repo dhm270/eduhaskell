@@ -332,13 +332,10 @@ object Evaluator {
             }
             case ":" => {
                 // TODO: some kind of type checking
-                lValue match {
-                    case Right(l) => {
-                        rValue match {
-                            case Right(r) => Right(ConsValue(l, r))
-                        }
-                    }
-                }
+                for {
+                    l <- lValue
+                    r <- rValue
+                } yield ConsValue(l, r)
             }
             case "==" => {
                 lValue match {
