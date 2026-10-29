@@ -9,8 +9,11 @@ object Evaluator {
             case Equation(lhs, rhs) => {
                 lhs match {
                     case Id(name) => {
-                        lazy val value = evaluate(env, rhs)
-                        env.define(name, value)
+                        lazy val newEnv: Environment = {
+                            lazy val value = evaluate(newEnv, rhs)
+                            env.define(name, value)
+                        }
+                        newEnv
                     }
                     case Apply(l, r) => {
                         val exprs = flattenApply(lhs)
