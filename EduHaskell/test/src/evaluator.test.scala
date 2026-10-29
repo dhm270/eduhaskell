@@ -24,7 +24,10 @@ class EvaluatorTests extends munit.FunSuite {
 
     def parseAndEvaluateInEnvironment(env: Environment, code: String): Value = {
         val parsed = parse(code)
-        Evaluator.evaluate(env, parsed.asInstanceOf[Expr])
+        val result = Evaluator.evaluate(env, parsed.asInstanceOf[Expr])
+        result match {
+            case Right(r) => r
+        }
     }
     
     test("Evaluate 1") {

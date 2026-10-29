@@ -44,8 +44,17 @@ object RunEduHaskell {
                     if (interactive) state = RUNNING
                 case INSTRUCTED(instruction) =>
                     if (instruction.isInstanceOf[Expr]) {
-                        print("< ")
-                        println(Evaluator.evaluate(replEnv, instruction.asInstanceOf[Expr]))
+                        val result = Evaluator.evaluate(replEnv, instruction.asInstanceOf[Expr])
+                        result match {
+                            case Right(r) => {
+                                print("< ")
+                                println(r)
+                            }
+                            case Left(e) => {
+                                print("! ")
+                                println(e.message)
+                            }
+                        }
                     } else if (instruction.isInstanceOf[Definition]) {
                         replEnv = Evaluator.withDefinition(replEnv, instruction.asInstanceOf[Definition])
                     } else {

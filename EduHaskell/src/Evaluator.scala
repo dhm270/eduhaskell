@@ -1,6 +1,7 @@
 package eduhaskell
 
 import eduhaskell.syntax._
+import eduhaskell.errors._
 import eduhaskell.Environment
 
 object Evaluator {
@@ -11,7 +12,7 @@ object Evaluator {
                     case Id(name) => {
                         lazy val newEnv: Environment = {
                             lazy val value = evaluate(newEnv, rhs)
-                            env.define(name, value)
+                            env.lazyDefine(name, () => value)
                         }
                         newEnv
                     }
@@ -64,20 +65,20 @@ object Evaluator {
         }
     }
 
-    def evaluate(env: Environment, e: Expr): Value = {
+    def evaluate(env: Environment, e: Expr): Either[Error, Value] = {
         e match {
             case Id(name) => env.find(name)
 
-            case Num(value) => IntValue(value)
-            case Real(value) => RealValue(value)
-            case Quote(quote) => StringValue(quote)
+            case Num(value) => Right(IntValue(value))
+            case Real(value) => Right(RealValue(value))
+            case Quote(quote) => Right(StringValue(quote))
 
             case Tuple(exprs) => {
                 if (exprs.length == 1) {
                     evaluate(env, exprs(0))
                 } else {
                     // TODO
-                    BooleanValue(false)
+                    Right(BooleanValue(false))
                 }
             }
 
@@ -97,19 +98,19 @@ object Evaluator {
             case PartialFun(pattern, guard, expr) => {
                 pattern match {
                     case Id(name) => {
-                        def func(value: Value): Value = {
+                        def func(value: Value): Either[Error, Value] = {
                             evaluate(env.define(name, value), expr)
                         }
-                        FunctionValue(func)
+                        Right(FunctionValue(func))
                     }
                     case Apply(l, r) => {
                         val argument = getLeftmostArgument(pattern)
                         argument match {
                             case Id(name) => {
-                                def func(value: Value): Value = {
+                                def func(value: Value): Either[Error, Value] = {
                                     evaluate(env.define(name, value), createPartialFun(pattern, expr))
                                 }
-                                FunctionValue(func)
+                                Right(FunctionValue(func))
                             }
                         }
                     }
@@ -120,7 +121,7 @@ object Evaluator {
                 if (alts.length == 1) {
                     evaluate(env, alts(0))
                 } else {
-                    BooleanValue(false)
+                    Right(BooleanValue(false))
                 }
             }
 
@@ -128,9 +129,9 @@ object Evaluator {
         }
     }
 
-    def evaluateSequence(env: Environment, exprs: Seq[Expr]): Value = {
+    def evaluateSequence(env: Environment, exprs: Seq[Expr]): Either[Error, Value] = {
         if (exprs.exists(_.isInstanceOf[DoubleDot])) {
-            if (exprs(0).isInstanceOf[DoubleDot]) throw new Exception("Parse error on sequence")
+            if (exprs(0).isInstanceOf[DoubleDot]) return Left(SyntaxError("malformed arithmetic sequence"))
             val start = exprs(0)
             var next: Option[Expr] = None
             var end: Option[Expr] = None
@@ -138,15 +139,15 @@ object Evaluator {
                 if (exprs.length == 3) {
                     end = Some(exprs(2))
                 } else if (exprs.length > 3) {
-                    throw new Exception("Parse error on sequence")
+                    return Left(SyntaxError("malformed arithmetic sequence"))
                 }
             } else {
                 next = Some(exprs(1))
-                if (!exprs(2).isInstanceOf[DoubleDot]) throw new Exception("Parse error on sequence")
+                if (!exprs(2).isInstanceOf[DoubleDot]) return Left(SyntaxError("malformed arithmetic sequence"))
                 if (exprs.length == 4) {
                     end = Some(exprs(3))
                 } else if (exprs.length > 4) {
-                    throw new Exception("Parse error on sequence")
+                    return Left(SyntaxError("malformed arithmetic sequence"))
                 }
             }
             evaluateArithmeticSequence(env, start, next, end)
@@ -155,66 +156,72 @@ object Evaluator {
             var result: Value = NilValue()
             while (remaining.length > 0) {
                 lazy val itemValue = evaluate(env, remaining(0))
-                result = ConsValue(itemValue, result)
+                itemValue match {
+                    case Right(v) => result = ConsValue(v, result)
+                }
                 remaining = remaining.drop(1)
             }
-            result
+            Right(result)
         }
     }
 
-    def generateIntArithmeticSequence(start: Long, step: Long, end: Option[Long]): Value = {
+    def generateIntArithmeticSequence(start: Long, step: Long, end: Option[Long]): Either[Error, Value] = {
         if (end.isDefined && start > end.get) {
-            NilValue()
+            Right(NilValue())
         } else {
             lazy val restOfSequence = generateIntArithmeticSequence(start + step, step, end)
-            ConsValue(IntValue(start), restOfSequence)
+            restOfSequence match {
+                case Right(r) => Right(ConsValue(IntValue(start), r))
+            }
         }
     }
 
-    def generateRealArithmeticSequence(start: Double, step: Double, end: Option[Double]): Value = {
+    def generateRealArithmeticSequence(start: Double, step: Double, end: Option[Double]): Either[Error, Value] = {
         if (end.isDefined && start > end.get) {
-            NilValue()
+            Right(NilValue())
         } else {
             lazy val restOfSequence = generateRealArithmeticSequence(start + step, step, end)
-            ConsValue(RealValue(start), restOfSequence)
+            restOfSequence match {
+                case Right(r) => Right(ConsValue(RealValue(start), r))
+            }
         }
     }
 
-    def evaluateArithmeticSequence(env: Environment, start: Expr, next: Option[Expr], end: Option[Expr]): Value = {
+    def evaluateArithmeticSequence(env: Environment, start: Expr, next: Option[Expr], end: Option[Expr]): Either[Error, Value] = {
         val startValue = evaluate(env, start)
         startValue match {
-            case IntValue(int) => {
+            case Right(IntValue(int)) => {
                 val start = int
                 var step: Long = 1
                 if (next.isDefined) {
                     val nextValue = evaluate(env, next.get)
                     nextValue match {
-                        case IntValue(next) => step = next - start
+                        case Right(IntValue(next)) => step = next - start
                     }
                 }
                 var extractedEnd: Option[Long] = None
                 if (end.isDefined) {
                     val endValue = evaluate(env, end.get)
                     endValue match {
-                        case IntValue(endInt) => extractedEnd = Some(endInt)
+                        case Right(IntValue(endInt)) => extractedEnd = Some(endInt)
                     }
                 }
                 generateIntArithmeticSequence(start, step, extractedEnd)
             }
-            case RealValue(real) => {
+            case Right(RealValue(real)) => {
                 val start = real
                 var step: Double = 1.0
                 if (next.isDefined) {
                     val nextValue = evaluate(env, next.get)
                     nextValue match {
-                        case RealValue(next) => step = next - start
+                        case Right(RealValue(next)) => step = next - start
                     }
                 }
                 var extractedEnd: Option[Double] = None
                 if (end.isDefined) {
                     val endValue = evaluate(env, end.get)
                     endValue match {
-                        case RealValue(endReal) => extractedEnd = Some(endReal)
+                        case Right(RealValue(endReal)) => extractedEnd = Some(endReal)
                     }
                 }
                 generateRealArithmeticSequence(start, step, extractedEnd)
@@ -222,145 +229,151 @@ object Evaluator {
         }
     }
 
-    def evaluateBinop(env: Environment, op: String, l: Expr, r: Expr): Value = {
+    def evaluateBinop(env: Environment, op: String, l: Expr, r: Expr): Either[Error, Value] = {
         lazy val lValue = evaluate(env, l)
         lazy val rValue = evaluate(env, r)
         op match {
             case "+" => {
                 lValue match {
-                    case IntValue(int1) => {
+                    case Right(IntValue(int1)) => {
                         rValue match {
-                            case IntValue(int2) => IntValue(int1 + int2)
+                            case Right(IntValue(int2)) => Right(IntValue(int1 + int2))
                         }
                     }
-                    case RealValue(real1) => {
+                    case Right(RealValue(real1)) => {
                         rValue match {
-                            case RealValue(real2) => RealValue(real1 + real2)
+                            case Right(RealValue(real2)) => Right(RealValue(real1 + real2))
                         }
                     }
                 }
             }
             case "-" => {
                 lValue match {
-                    case IntValue(int1) => {
+                    case Right(IntValue(int1)) => {
                         rValue match {
-                            case IntValue(int2) => IntValue(int1 - int2)
+                            case Right(IntValue(int2)) => Right(IntValue(int1 - int2))
                         }
                     }
-                    case RealValue(real1) => {
+                    case Right(RealValue(real1)) => {
                         rValue match {
-                            case RealValue(real2) => RealValue(real1 - real2)
+                            case Right(RealValue(real2)) => Right(RealValue(real1 - real2))
                         }
                     }
                 }
             }
             case "*" => {
                 lValue match {
-                    case IntValue(int1) => {
+                    case Right(IntValue(int1)) => {
                         rValue match {
-                            case IntValue(int2) => IntValue(int1 * int2)
+                            case Right(IntValue(int2)) => Right(IntValue(int1 * int2))
                         }
                     }
-                    case RealValue(real1) => {
+                    case Right(RealValue(real1)) => {
                         rValue match {
-                            case RealValue(real2) => RealValue(real1 * real2)
+                            case Right(RealValue(real2)) => Right(RealValue(real1 * real2))
                         }
                     }
                 }
             }
             case "/" => {
                 lValue match {
-                    case IntValue(int1) => {
+                    case Right(IntValue(int1)) => {
                         rValue match {
-                            case IntValue(int2) => IntValue(int1 / int2)
+                            case Right(IntValue(int2)) => Right(IntValue(int1 / int2))
                         }
                     }
-                    case RealValue(real1) => {
+                    case Right(RealValue(real1)) => {
                         rValue match {
-                            case RealValue(real2) => RealValue(real1 / real2)
+                            case Right(RealValue(real2)) => Right(RealValue(real1 / real2))
                         }
                     }
                 }
             }
             case "^" => {
                 lValue match {
-                    case IntValue(int1) => {
+                    case Right(IntValue(int1)) => {
                         rValue match {
-                            case IntValue(int2) => IntValue(Math.pow(int1, int2).intValue)
+                            case Right(IntValue(int2)) => Right(IntValue(Math.pow(int1, int2).intValue))
                         }
                     }
-                    case RealValue(real1) => {
+                    case Right(RealValue(real1)) => {
                         rValue match {
-                            case RealValue(real2) => RealValue(Math.pow(real1, real2))
+                            case Right(RealValue(real2)) => Right(RealValue(Math.pow(real1, real2)))
                         }
                     }
                 }
             }
             case ":" => {
                 // TODO: some kind of type checking
-                ConsValue(lValue, rValue)
+                lValue match {
+                    case Right(l) => {
+                        rValue match {
+                            case Right(r) => Right(ConsValue(l, r))
+                        }
+                    }
+                }
             }
             case "==" => {
                 lValue match {
-                    case IntValue(int1) => {
+                    case Right(IntValue(int1)) => {
                         rValue match {
-                            case IntValue(int2) => BooleanValue(int1 == int2)
+                            case Right(IntValue(int2)) => Right(BooleanValue(int1 == int2))
                         }
                     }
-                    case RealValue(real1) => {
+                    case Right(RealValue(real1)) => {
                         rValue match {
-                            case RealValue(real2) => BooleanValue(real1 == real2)
+                            case Right(RealValue(real2)) => Right(BooleanValue(real1 == real2))
                         }
                     }
-                    case StringValue(quote1) => {
+                    case Right(StringValue(quote1)) => {
                         rValue match {
-                            case StringValue(quote2) => BooleanValue(quote1.body == quote2.body)
+                            case Right(StringValue(quote2)) => Right(BooleanValue(quote1.body == quote2.body))
                         }
                     }
                 }
             }
             case "<" => {
                 lValue match {
-                    case IntValue(int1) => {
+                    case Right(IntValue(int1)) => {
                         rValue match {
-                            case IntValue(int2) => BooleanValue(int1 < int2)
+                            case Right(IntValue(int2)) => Right(BooleanValue(int1 < int2))
                         }
                     }
-                    case RealValue(real1) => {
+                    case Right(RealValue(real1)) => {
                         rValue match {
-                            case RealValue(real2) => BooleanValue(real1 < real2)
+                            case Right(RealValue(real2)) => Right(BooleanValue(real1 < real2))
                         }
                     }
                 }
             }
             case ">" => {
                 lValue match {
-                    case IntValue(int1) => {
+                    case Right(IntValue(int1)) => {
                         rValue match {
-                            case IntValue(int2) => BooleanValue(int1 > int2)
+                            case Right(IntValue(int2)) => Right(BooleanValue(int1 > int2))
                         }
                     }
-                    case RealValue(real1) => {
+                    case Right(RealValue(real1)) => {
                         rValue match {
-                            case RealValue(real2) => BooleanValue(real1 > real2)
+                            case Right(RealValue(real2)) => Right(BooleanValue(real1 > real2))
                         }
                     }
                 }
             }
             case "||" => {
                 lValue match {
-                    case BooleanValue(bool1) => {
+                    case Right(BooleanValue(bool1)) => {
                         rValue match {
-                            case BooleanValue(bool2) => BooleanValue(bool1 || bool2)
+                            case Right(BooleanValue(bool2)) => Right(BooleanValue(bool1 || bool2))
                         }
                     }
                 }
             }
             case "&&" => {
                 lValue match {
-                    case BooleanValue(bool1) => {
+                    case Right(BooleanValue(bool1)) => {
                         rValue match {
-                            case BooleanValue(bool2) => BooleanValue(bool1 && bool2)
+                            case Right(BooleanValue(bool2)) => Right(BooleanValue(bool1 && bool2))
                         }
                     }
                 }
@@ -368,30 +381,34 @@ object Evaluator {
         }
     }
 
-    def evaluatePrefix(env: Environment, op: String, e: Expr): Value = {
+    def evaluatePrefix(env: Environment, op: String, e: Expr): Either[Error, Value] = {
         lazy val eValue = evaluate(env, e)
         op match {
             case "-" => {
                 eValue match {
-                    case IntValue(int) => IntValue(-int)
-                    case RealValue(real) => RealValue(-real)
+                    case Right(IntValue(int)) => Right(IntValue(-int))
+                    case Right(RealValue(real)) => Right(RealValue(-real))
                 }
             }
         }
     }
 
-    def evaluateApply(env: Environment, l: Expr, r: Expr): Value = {
+    def evaluateApply(env: Environment, l: Expr, r: Expr): Either[Error, Value] = {
         lazy val lValue = evaluate(env, l)
         lazy val rValue = evaluate(env, r)
         lValue match {
-            case FunctionValue(func) => func(rValue)
+            case Right(FunctionValue(func)) => {
+                rValue match {
+                    case Right(r) => func(r)
+                }
+            }
         }
     }
 
-    def evaluateIf(env: Environment, condition: Expr, trueExpr: Expr, falseExpr: Expr): Value = {
+    def evaluateIf(env: Environment, condition: Expr, trueExpr: Expr, falseExpr: Expr): Either[Error, Value] = {
         val conditionValue = evaluate(env, condition)
         conditionValue match {
-            case BooleanValue(bool) => if (bool) { evaluate(env, trueExpr) } else { evaluate(env, falseExpr) }
+            case Right(BooleanValue(bool)) => if (bool) { evaluate(env, trueExpr) } else { evaluate(env, falseExpr) }
         }
     }
 }

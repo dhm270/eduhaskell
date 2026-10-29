@@ -3,6 +3,7 @@ package eduhaskell
 import collection.mutable.Map
 
 import eduhaskell.syntax._
+import eduhaskell.errors._
 
 trait Value {
     val source: String
@@ -28,7 +29,7 @@ case class BooleanValue(value: Boolean) extends Value {
     lazy val source = value.toString
 }
 
-case class FunctionValue(func: Value => Value) extends Value {
+case class FunctionValue(func: Value => Either[Error, Value]) extends Value {
     lazy val source = "<function value>"
 }
 
@@ -40,16 +41,20 @@ case class NilValue() extends Value {
     lazy val source = "nil"
 }
 
-class Environment(private var map: Map[String, () => Value]) {
-    def find(ident: String): Value = {
-        map(ident)()
+class Environment(private var map: Map[String, () => Either[Error, Value]]) {
+    def find(ident: String): Either[Error, Value] = {
+        if (map.isDefinedAt(ident)) {
+            map(ident)()
+        } else {
+            Left(UndeclaredVariable(ident))
+        }
     }
 
     def define(ident: String, value: Value): Environment = {
-        new Environment(this.map.updated(ident, () => value))
+        new Environment(this.map.updated(ident, () => Right(value)))
     }
 
-    def lazyDefine(ident: String, getter: () => Value): Environment = {
+    def lazyDefine(ident: String, getter: () => Either[Error, Value]): Environment = {
         new Environment(this.map.updated(ident, getter))
     }
 
