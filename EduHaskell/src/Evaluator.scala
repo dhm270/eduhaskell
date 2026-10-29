@@ -158,6 +158,7 @@ object Evaluator {
                 lazy val itemValue = evaluate(env, remaining(0))
                 itemValue match {
                     case Right(v) => result = ConsValue(v, result)
+                    case x => return x
                 }
                 remaining = remaining.drop(1)
             }
@@ -170,9 +171,7 @@ object Evaluator {
             Right(NilValue())
         } else {
             lazy val restOfSequence = generateIntArithmeticSequence(start + step, step, end)
-            restOfSequence match {
-                case Right(r) => Right(ConsValue(IntValue(start), r))
-            }
+            for { r <- restOfSequence } yield ConsValue(IntValue(start), r)
         }
     }
 
@@ -181,9 +180,7 @@ object Evaluator {
             Right(NilValue())
         } else {
             lazy val restOfSequence = generateRealArithmeticSequence(start + step, step, end)
-            restOfSequence match {
-                case Right(r) => Right(ConsValue(RealValue(start), r))
-            }
+            for { r <- restOfSequence } yield ConsValue(RealValue(start), r)
         }
     }
 
@@ -235,72 +232,102 @@ object Evaluator {
         op match {
             case "+" => {
                 lValue match {
-                    case Right(IntValue(int1)) => {
+                    case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => Right(IntValue(int1 + int2))
+                            case Right(r) => Left(TypeError(s"operands of + have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
-                    case Right(RealValue(real1)) => {
+                    case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => Right(RealValue(real1 + real2))
+                            case Right(r) => Left(TypeError(s"operands of + have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(TypeError(s"lhs operand of + has type ${x.getType()}, which is illegal"))
+                    case x => x
                 }
             }
             case "-" => {
                 lValue match {
-                    case Right(IntValue(int1)) => {
+                    case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => Right(IntValue(int1 - int2))
+                            case Right(r) => Left(TypeError(s"operands of - have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
-                    case Right(RealValue(real1)) => {
+                    case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => Right(RealValue(real1 - real2))
+                            case Right(r) => Left(TypeError(s"operands of - have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(TypeError(s"lhs operand of - has type ${x.getType()}, which is illegal"))
+                    case x => x
                 }
             }
             case "*" => {
                 lValue match {
-                    case Right(IntValue(int1)) => {
+                    case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => Right(IntValue(int1 * int2))
+                            case Right(r) => Left(TypeError(s"operands of * have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
-                    case Right(RealValue(real1)) => {
+                    case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => Right(RealValue(real1 * real2))
+                            case Right(r) => Left(TypeError(s"operands of * have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(TypeError(s"lhs operand of * is of type ${x.getType()}, which is illegal"))
+                    case x => x
                 }
             }
             case "/" => {
                 lValue match {
-                    case Right(IntValue(int1)) => {
+                    case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => Right(IntValue(int1 / int2))
+                            case Right(r) => Left(TypeError(s"operands of / have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
-                    case Right(RealValue(real1)) => {
+                    case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => Right(RealValue(real1 / real2))
+                            case Right(r) => Left(TypeError(s"operands of / have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(TypeError(s"lhs operand of / is of type ${x.getType()}, which is illegal"))
+                    case x => x
                 }
             }
             case "^" => {
                 lValue match {
-                    case Right(IntValue(int1)) => {
+                    case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => Right(IntValue(Math.pow(int1, int2).intValue))
+                            case Right(r) => Left(TypeError(s"operands of ^ have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
-                    case Right(RealValue(real1)) => {
+                    case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => Right(RealValue(Math.pow(real1, real2)))
+                            case Right(r) => Left(TypeError(s"operands of ^ have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(TypeError(s"lhs operand of ^ is of type ${x.getType()}, which is illegal"))
+                    case x => x
                 }
             }
             case ":" => {
@@ -315,67 +342,95 @@ object Evaluator {
             }
             case "==" => {
                 lValue match {
-                    case Right(IntValue(int1)) => {
+                    case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => Right(BooleanValue(int1 == int2))
+                            case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
-                    case Right(RealValue(real1)) => {
+                    case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => Right(BooleanValue(real1 == real2))
+                            case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
-                    case Right(StringValue(quote1)) => {
+                    case Right(l @ StringValue(quote1)) => {
                         rValue match {
                             case Right(StringValue(quote2)) => Right(BooleanValue(quote1.body == quote2.body))
+                            case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(NotImplemented())
+                    case x => x
                 }
             }
             case "<" => {
                 lValue match {
-                    case Right(IntValue(int1)) => {
+                    case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => Right(BooleanValue(int1 < int2))
+                            case Right(r) => Left(TypeError(s"operands of < have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
-                    case Right(RealValue(real1)) => {
+                    case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => Right(BooleanValue(real1 < real2))
+                            case Right(r) => Left(TypeError(s"operands of < have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(NotImplemented())
+                    case x => x
                 }
             }
             case ">" => {
                 lValue match {
-                    case Right(IntValue(int1)) => {
+                    case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => Right(BooleanValue(int1 > int2))
+                            case Right(r) => Left(TypeError(s"operands of > have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
-                    case Right(RealValue(real1)) => {
+                    case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => Right(BooleanValue(real1 > real2))
+                            case Right(r) => Left(TypeError(s"operands of > have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(NotImplemented())
+                    case x => x
                 }
             }
             case "||" => {
                 lValue match {
-                    case Right(BooleanValue(bool1)) => {
+                    case Right(l @ BooleanValue(bool1)) => {
                         rValue match {
                             case Right(BooleanValue(bool2)) => Right(BooleanValue(bool1 || bool2))
+                            case Right(r) => Left(TypeError(s"operands of || have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(NotImplemented())
+                    case x => x
                 }
             }
             case "&&" => {
                 lValue match {
-                    case Right(BooleanValue(bool1)) => {
+                    case Right(l @ BooleanValue(bool1)) => {
                         rValue match {
                             case Right(BooleanValue(bool2)) => Right(BooleanValue(bool1 && bool2))
+                            case Right(r) => Left(TypeError(s"operands of && have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
                         }
                     }
+                    case Right(x) => Left(NotImplemented())
+                    case x => x
                 }
             }
         }
@@ -388,6 +443,8 @@ object Evaluator {
                 eValue match {
                     case Right(IntValue(int)) => Right(IntValue(-int))
                     case Right(RealValue(real)) => Right(RealValue(-real))
+                    case Right(x) => Left(TypeError(s"cannot negate a value of type ${x.getType()}"))
+                    case x => x
                 }
             }
         }
@@ -400,8 +457,11 @@ object Evaluator {
             case Right(FunctionValue(func)) => {
                 rValue match {
                     case Right(r) => func(r)
+                    case x => x
                 }
             }
+            case Right(x) => Left(TypeError(s"cannot call a value of type ${x.getType()}"))
+            case x => x
         }
     }
 
@@ -409,6 +469,7 @@ object Evaluator {
         val conditionValue = evaluate(env, condition)
         conditionValue match {
             case Right(BooleanValue(bool)) => if (bool) { evaluate(env, trueExpr) } else { evaluate(env, falseExpr) }
+            case Right(x) => Left(TypeError(s"if-statement condition is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}"))
         }
     }
 }

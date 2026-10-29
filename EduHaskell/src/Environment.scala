@@ -9,36 +9,45 @@ trait Value {
     val source: String
     override lazy val toString: String = source
     def isNumber(): Boolean = false
+
+    def getType(): String = "Unknown"
 }
 
 case class IntValue(value: Long) extends Value {
     lazy val source = value.toString
     override def isNumber(): Boolean = true
+    override def getType(): String = "Integer"
 }
 
 case class RealValue(value: Double) extends Value {
     lazy val source = value.toString
     override def isNumber(): Boolean = true
+    override def getType(): String = "Real"
 }
 
 case class StringValue(value: Quotation) extends Value {
     lazy val source = value.toString
+    override def getType(): String = "String"
 }
 
 case class BooleanValue(value: Boolean) extends Value {
     lazy val source = value.toString
+    override def getType(): String = "Boolean"
 }
 
 case class FunctionValue(func: Value => Either[Error, Value]) extends Value {
     lazy val source = "<function value>"
+    override def getType(): String = "Function" // TODO: better type
 }
 
 case class ConsValue(head: Value, tail: Value) extends Value {
     lazy val source = s"${head.source} : ${tail.source}"
+    override def getType(): String = "Cons" // TODO: better type
 }
 
 case class NilValue() extends Value {
     lazy val source = "nil"
+    override def getType(): String = "Nil" // TODO: better type
 }
 
 class Environment(private var map: Map[String, () => Either[Error, Value]]) {
