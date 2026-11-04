@@ -9,6 +9,7 @@ import eduhaskell.Components
 import eduhaskell.Scanner._
 import eduhaskell.Evaluator
 import eduhaskell.Environment
+import eduhaskell.LazyValue
 import eduhaskell.syntax._
 
 import LRParser._
@@ -48,7 +49,7 @@ object RunEduHaskell {
                         result match {
                             case Right(r) => {
                                 print("< ")
-                                r.lazyPrint()
+                                LazyValue.lazyPrint(r)
                                 println()
                             }
                             case Left(e) => {

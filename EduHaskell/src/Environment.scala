@@ -9,7 +9,6 @@ trait Value {
     val eagerSource: String
     override lazy val toString: String = eagerSource
     def isNumber(): Boolean = false
-    def lazyPrint(): Unit = print(this.eagerSource)
 
     def getType(): String = "Unknown"
 }
@@ -44,12 +43,6 @@ case class FunctionValue(func: LazyValue => Either[Error, Value]) extends Value 
 case class ConsValue(head: LazyValue, tail: LazyValue) extends Value {
     lazy val eagerSource = s"${head.eagerSource} : ${tail.eagerSource}"
     override def getType(): String = "Cons" // TODO: better type
-
-    override def lazyPrint(): Unit = {
-        head.lazyPrint()
-        print(" : ")
-        tail.lazyPrint()
-    }
 }
 
 case class NilValue() extends Value {
@@ -67,12 +60,46 @@ case class LazyValue(private var getter: () => Either[Error, Value]) {
     }
 
     def get(): Either[Error, Value] = this.getter()
+}
 
-    def lazyPrint(): Unit = {
-        val got = this.getter()
-        got match {
-            case Right(v) => v.lazyPrint()
-            case Left(e) => s"*** Error: ${e.message}"
+object LazyValue {
+    def lazyPrint(v: Value): Unit = {
+        v match {
+            case ConsValue(h, t) => {
+                this.lazyPrint(h)
+                print(" : ")
+                this.lazyPrint(t)
+            }
+            case v: Value => {
+                print(v)
+            }
+        }
+    }
+
+    def lazyPrint(lv: LazyValue): Unit = {
+        var curr = lv
+        var printing = true
+        while (printing) {
+            val got = curr.get()
+            got match {
+                case Left(e) => {
+                    print(s"*** Error: ${e.message}")
+                    printing = false
+                }
+                case Right(v) => {
+                    v match {
+                        case ConsValue(h, t) => {
+                            this.lazyPrint(h)
+                            print(" : ")
+                            curr = t
+                        }
+                        case v: Value => {
+                            print(v)
+                            printing = false
+                        }
+                    }
+                }
+            }
         }
     }
 }
