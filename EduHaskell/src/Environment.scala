@@ -35,7 +35,7 @@ case class BooleanValue(value: Boolean) extends Value {
     override def getType(): String = "Boolean"
 }
 
-case class FunctionValue(func: Value => Either[Error, Value]) extends Value {
+case class FunctionValue(func: (() => Either[Error, Value]) => Either[Error, Value]) extends Value {
     lazy val source = "<function value>"
     override def getType(): String = "Function" // TODO: better type
 }

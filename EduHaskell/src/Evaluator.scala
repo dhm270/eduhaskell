@@ -100,8 +100,8 @@ object Evaluator {
             case PartialFun(pattern, guard, expr) => {
                 pattern match {
                     case Id(name) => {
-                        def func(value: Value): Either[Error, Value] = {
-                            evaluate(env.define(name, value), expr)
+                        def func(valueGetter: () => Either[Error, Value]): Either[Error, Value] = {
+                            evaluate(env.lazyDefine(name, valueGetter), expr)
                         }
                         Right(FunctionValue(func))
                     }
@@ -109,8 +109,8 @@ object Evaluator {
                         val argument = getLeftmostArgument(pattern)
                         argument match {
                             case Id(name) => {
-                                def func(value: Value): Either[Error, Value] = {
-                                    evaluate(env.define(name, value), createPartialFun(pattern, expr))
+                                def func(valueGetter: () => Either[Error, Value]): Either[Error, Value] = {
+                                    evaluate(env.lazyDefine(name, valueGetter), createPartialFun(pattern, expr))
                                 }
                                 Right(FunctionValue(func))
                             }
@@ -465,10 +465,10 @@ object Evaluator {
         lazy val rValue = evaluate(env, r)
         lValue match {
             case Right(FunctionValue(func)) => {
-                rValue match {
-                    case Right(r) => func(r)
-                    case x => x
+                def f(): Either[Error, Value] = {
+                    evaluate(env, r)
                 }
+                func(f)
             }
             case Right(x) => Left(TypeError(s"cannot call a value of type ${x.getType()}"))
             case x => x
