@@ -40,19 +40,20 @@ object Evaluator {
 
     def getLeftmostArgument(e: Expr): Expr = {
         e match {
-            case Apply(Apply(l1, l2), r) => getLeftmostArgument(Apply(l1, l2))
+            case Apply(l @ Apply(_, _), r) => getLeftmostArgument(l)
             case Apply(l, r) => l
         }
     }
 
-    def createPartialFun(lhs: Expr, rhs: Expr): Expr = {
-        def removeFirst(e: Expr): Expr = {
-            e match {
-                case Apply(Apply(l1, l2), r) => Apply(removeFirst(Apply(l1, l2)), r)
-                case Apply(_, r) => r
-            }
+    def removeLeftmostArgument(e: Expr): Expr = {
+        e match {
+            case Apply(l @ Apply(_, _), r) => Apply(removeLeftmostArgument(l), r)
+            case Apply(_, r) => r
         }
-        val editedLhs = removeFirst(lhs)
+    }
+
+    def createPartialFun(lhs: Expr, rhs: Expr): Expr = {        
+        val editedLhs = removeLeftmostArgument(lhs)
         PartialFun(editedLhs, None, rhs)
     }
 
@@ -65,19 +66,118 @@ object Evaluator {
         }
     }
 
-    def patternMatch(env: Environment, pattern: Expr, comparison: LazyValue, expr: Expr): Either[Error, Value] = {
-        pattern match {
-            case Id(name) => {
-                evaluate(env.lazyDefine(name, comparison), expr)
-            }
-            case Apply(l, r) => {
-                val argument = getLeftmostArgument(pattern)
-                argument match {
-                    case Id(name) => {
-                        evaluate(env.lazyDefine(name, comparison), createPartialFun(pattern, expr))
-                    }
+    def matchAndExtendEnvironment(env: Environment, pattern: Expr, comparison: LazyValue): Option[Environment] = {
+        // If we're able to successfully pattern match, then we return Some(newEnv),
+        // where newEnv is the potentially extended environment, containing any
+        // necessary new identifier definitions.
+        var pat = pattern
+        pat match {
+            case Tuple(exprs) => {
+                if (exprs.length == 1) {
+                    pat = Bra(exprs(0))
                 }
             }
+            case _ => {}
+        }
+        pat match {
+            case Id(name) => {
+                Some(env.lazyDefine(name, comparison))
+            }
+
+            case Num(value) => {
+                val got = comparison.get()
+                got match {
+                    case Right(IntValue(int)) => {
+                        if (int == value) {
+                            Some(env)
+                        } else {
+                            None
+                        }
+                    }
+                    case _ => None
+                }
+            }
+
+            case Real(value) => {
+                val got = comparison.get()
+                got match {
+                    case Right(RealValue(real)) => {
+                        if (real == value) {
+                            Some(env)
+                        } else {
+                            None
+                        }
+                    }
+                    case _ => None
+                }
+            }
+
+            case Quote(value) => {
+                val got = comparison.get()
+                got match {
+                    case Right(StringValue(quote)) => {
+                        if (quote == value) {
+                            Some(env)
+                        } else {
+                            None
+                        }
+                    }
+                    case _ => None
+                }
+            }
+
+            case Tuple(patternExprs) => {
+                // TODO
+                None
+            }
+
+            case Sequence(patternExprs) => {
+                // TODO
+                None
+            }
+
+            case Bra(Binop(":", l, r)) => {
+                val got = comparison.get()
+                got match {
+                    case Right(ConsValue(head, tail)) => {
+                        val envAfterHead = matchAndExtendEnvironment(env, l, head)
+                        if (envAfterHead.isDefined) {
+                            matchAndExtendEnvironment(envAfterHead.get, r, tail)
+                        } else {
+                            None
+                        }
+                    }
+                    case _ => None
+                }
+            }
+
+            case _ => None
+        }
+    }
+
+    def patternMatch(env: Environment, pattern: Expr, comparison: LazyValue, expr: Expr): Either[Error, Value] = {
+        // If the pattern is multiple things, then we convert it.
+        // Instead, we want to think of this as a function that takes only
+        // a single parameter and, if it is defined to have "multiple parameters",
+        // then we return a partial function.
+        var pat = pattern
+        var e = expr
+        pat match {
+            case Apply(l, r) => {
+                val argument = getLeftmostArgument(pat)
+                val partialFun = createPartialFun(pat, e)
+                pat = argument
+                e = partialFun
+            }
+            case _ => {}
+        }
+        // TODO: implement the ability to check against multiple function definition clauses?
+        val maybeNewEnv: Option[Environment] = matchAndExtendEnvironment(env, pat, comparison)
+        if (maybeNewEnv.isDefined) {
+            val newEnv = maybeNewEnv.get
+            evaluate(newEnv, e)
+        } else {
+            Left(PatternMatchError())
         }
     }
 
@@ -118,25 +218,6 @@ object Evaluator {
                     patternMatch(env, pattern, lazyValue, expr)
                 }
                 Right(FunctionValue(func))
-                // pattern match {
-                //     case Id(name) => {
-                //         def func(lazyValue: LazyValue): Either[Error, Value] = {
-                //             evaluate(env.lazyDefine(name, lazyValue), expr)
-                //         }
-                //         Right(FunctionValue(func))
-                //     }
-                //     case Apply(l, r) => {
-                //         val argument = getLeftmostArgument(pattern)
-                //         argument match {
-                //             case Id(name) => {
-                //                 def func(lazyValue: LazyValue): Either[Error, Value] = {
-                //                     evaluate(env.lazyDefine(name, lazyValue), createPartialFun(pattern, expr))
-                //                 }
-                //                 Right(FunctionValue(func))
-                //             }
-                //         }
-                //     }
-                // }
             }
             case Function(alts) => {
                 // TODO: do something about when there is more than one of these
@@ -174,15 +255,12 @@ object Evaluator {
                 }
             }
             evaluateArithmeticSequence(env, start, next, end)
+        } else if (exprs.length == 0) {
+            Right(NilValue())
         } else {
-            var remaining = exprs.reverse
-            var result: Value = NilValue()
-            while (remaining.length > 0) {
-                def f(): Either[Error, Value] = evaluate(env, remaining(0))
-                result = ConsValue(LazyValue(f), LazyValue(() => Right(result)))
-                remaining = remaining.drop(1)
-            }
-            Right(result)
+            val head = exprs(0)
+            val tail = exprs.drop(1)
+            evaluate(env, Binop(":", head, Sequence(tail)))
         }
     }
 

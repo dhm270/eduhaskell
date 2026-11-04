@@ -19,6 +19,10 @@ object errors {
         val message = "denominator of division is zero"
     }
 
+    case class PatternMatchError() extends RuntimeError {
+        val message = "pattern matching failed"
+    }
+
     case class SyntaxError(message: String) extends Error {}
 
     case class TypeError(message: String) extends Error {}
