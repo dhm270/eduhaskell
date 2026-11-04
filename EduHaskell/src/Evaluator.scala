@@ -65,6 +65,22 @@ object Evaluator {
         }
     }
 
+    def patternMatch(env: Environment, pattern: Expr, comparison: LazyValue, expr: Expr): Either[Error, Value] = {
+        pattern match {
+            case Id(name) => {
+                evaluate(env.lazyDefine(name, comparison), expr)
+            }
+            case Apply(l, r) => {
+                val argument = getLeftmostArgument(pattern)
+                argument match {
+                    case Id(name) => {
+                        evaluate(env.lazyDefine(name, comparison), createPartialFun(pattern, expr))
+                    }
+                }
+            }
+        }
+    }
+
     def evaluate(env: Environment, e: Expr): Either[Error, Value] = {
         e match {
             case Op(name) => Left(NotImplemented())
@@ -98,25 +114,29 @@ object Evaluator {
             case Where(e, defs) => evaluate(withDefinitions(env, defs), e)
 
             case PartialFun(pattern, guard, expr) => {
-                pattern match {
-                    case Id(name) => {
-                        def func(lazyValue: LazyValue): Either[Error, Value] = {
-                            evaluate(env.lazyDefine(name, lazyValue), expr)
-                        }
-                        Right(FunctionValue(func))
-                    }
-                    case Apply(l, r) => {
-                        val argument = getLeftmostArgument(pattern)
-                        argument match {
-                            case Id(name) => {
-                                def func(lazyValue: LazyValue): Either[Error, Value] = {
-                                    evaluate(env.lazyDefine(name, lazyValue), createPartialFun(pattern, expr))
-                                }
-                                Right(FunctionValue(func))
-                            }
-                        }
-                    }
+                def func(lazyValue: LazyValue): Either[Error, Value] = {
+                    patternMatch(env, pattern, lazyValue, expr)
                 }
+                Right(FunctionValue(func))
+                // pattern match {
+                //     case Id(name) => {
+                //         def func(lazyValue: LazyValue): Either[Error, Value] = {
+                //             evaluate(env.lazyDefine(name, lazyValue), expr)
+                //         }
+                //         Right(FunctionValue(func))
+                //     }
+                //     case Apply(l, r) => {
+                //         val argument = getLeftmostArgument(pattern)
+                //         argument match {
+                //             case Id(name) => {
+                //                 def func(lazyValue: LazyValue): Either[Error, Value] = {
+                //                     evaluate(env.lazyDefine(name, lazyValue), createPartialFun(pattern, expr))
+                //                 }
+                //                 Right(FunctionValue(func))
+                //             }
+                //         }
+                //     }
+                // }
             }
             case Function(alts) => {
                 // TODO: do something about when there is more than one of these
