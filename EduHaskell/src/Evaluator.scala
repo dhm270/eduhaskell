@@ -12,7 +12,7 @@ object Evaluator {
                     case Id(name) => {
                         lazy val newEnv: Environment = {
                             lazy val value = evaluate(newEnv, rhs)
-                            env.lazyDefine(name, () => value)
+                            env.lazyDefine(name, LazyValue(() => value))
                         }
                         newEnv
                     }
@@ -23,7 +23,7 @@ object Evaluator {
                                 val asPartialFun = createPartialFun(lhs, rhs)
                                 lazy val newEnv: Environment = {
                                     lazy val value = evaluate(newEnv, asPartialFun)
-                                    env.lazyDefine(funcName, () => value)
+                                    env.lazyDefine(funcName, LazyValue(() => value))
                                 }
                                 newEnv
                             }
@@ -68,7 +68,7 @@ object Evaluator {
     def evaluate(env: Environment, e: Expr): Either[Error, Value] = {
         e match {
             case Op(name) => Left(NotImplemented())
-            case Id(name) => env.find(name)
+            case Id(name) => env.find(name).get()
 
             case Num(value) => Right(IntValue(value))
             case Real(value) => Right(RealValue(value))
@@ -100,8 +100,8 @@ object Evaluator {
             case PartialFun(pattern, guard, expr) => {
                 pattern match {
                     case Id(name) => {
-                        def func(valueGetter: () => Either[Error, Value]): Either[Error, Value] = {
-                            evaluate(env.lazyDefine(name, valueGetter), expr)
+                        def func(lazyValue: LazyValue): Either[Error, Value] = {
+                            evaluate(env.lazyDefine(name, lazyValue), expr)
                         }
                         Right(FunctionValue(func))
                     }
@@ -109,8 +109,8 @@ object Evaluator {
                         val argument = getLeftmostArgument(pattern)
                         argument match {
                             case Id(name) => {
-                                def func(valueGetter: () => Either[Error, Value]): Either[Error, Value] = {
-                                    evaluate(env.lazyDefine(name, valueGetter), createPartialFun(pattern, expr))
+                                def func(lazyValue: LazyValue): Either[Error, Value] = {
+                                    evaluate(env.lazyDefine(name, lazyValue), createPartialFun(pattern, expr))
                                 }
                                 Right(FunctionValue(func))
                             }
@@ -158,11 +158,8 @@ object Evaluator {
             var remaining = exprs.reverse
             var result: Value = NilValue()
             while (remaining.length > 0) {
-                lazy val itemValue = evaluate(env, remaining(0))
-                itemValue match {
-                    case Right(v) => result = ConsValue(v, result)
-                    case x => return x
-                }
+                def f(): Either[Error, Value] = evaluate(env, remaining(0))
+                result = ConsValue(LazyValue(f), LazyValue(() => Right(result)))
                 remaining = remaining.drop(1)
             }
             Right(result)
@@ -174,7 +171,7 @@ object Evaluator {
             Right(NilValue())
         } else {
             lazy val restOfSequence = generateIntArithmeticSequence(start + step, step, end)
-            for { r <- restOfSequence } yield ConsValue(IntValue(start), r)
+            Right(ConsValue(LazyValue(() => Right(IntValue(start))), LazyValue(() => restOfSequence)))
         }
     }
 
@@ -183,7 +180,7 @@ object Evaluator {
             Right(NilValue())
         } else {
             lazy val restOfSequence = generateRealArithmeticSequence(start + step, step, end)
-            for { r <- restOfSequence } yield ConsValue(RealValue(start), r)
+            Right(ConsValue(LazyValue(() => Right(RealValue(start))), LazyValue(() => restOfSequence)))
         }
     }
 
@@ -345,10 +342,7 @@ object Evaluator {
             }
             case ":" => {
                 // TODO: some kind of type checking
-                for {
-                    l <- lValue
-                    r <- rValue
-                } yield ConsValue(l, r)
+                Right(ConsValue(LazyValue(() => lValue), LazyValue(() => rValue)))
             }
             case "==" => {
                 lValue match {
@@ -468,7 +462,7 @@ object Evaluator {
                 def f(): Either[Error, Value] = {
                     evaluate(env, r)
                 }
-                func(f)
+                func(LazyValue(f))
             }
             case Right(x) => Left(TypeError(s"cannot call a value of type ${x.getType()}"))
             case x => x

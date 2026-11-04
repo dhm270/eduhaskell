@@ -48,7 +48,8 @@ object RunEduHaskell {
                         result match {
                             case Right(r) => {
                                 print("< ")
-                                println(r)
+                                r.lazyPrint()
+                                println()
                             }
                             case Left(e) => {
                                 print("! ")
