@@ -533,6 +533,46 @@ object Evaluator {
                     case x => x
                 }
             }
+            case "<=" => {
+                lValue match {
+                    case Right(l @ IntValue(int1)) => {
+                        rValue match {
+                            case Right(IntValue(int2)) => Right(BooleanValue(int1 <= int2))
+                            case Right(r) => Left(TypeError(s"operands of <= have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
+                        }
+                    }
+                    case Right(l @ RealValue(real1)) => {
+                        rValue match {
+                            case Right(RealValue(real2)) => Right(BooleanValue(real1 <= real2))
+                            case Right(r) => Left(TypeError(s"operands of <= have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
+                        }
+                    }
+                    case Right(x) => Left(NotImplemented())
+                    case x => x
+                }
+            }
+            case ">=" => {
+                lValue match {
+                    case Right(l @ IntValue(int1)) => {
+                        rValue match {
+                            case Right(IntValue(int2)) => Right(BooleanValue(int1 >= int2))
+                            case Right(r) => Left(TypeError(s"operands of >= have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
+                        }
+                    }
+                    case Right(l @ RealValue(real1)) => {
+                        rValue match {
+                            case Right(RealValue(real2)) => Right(BooleanValue(real1 >= real2))
+                            case Right(r) => Left(TypeError(s"operands of >= have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            case x => x
+                        }
+                    }
+                    case Right(x) => Left(NotImplemented())
+                    case x => x
+                }
+            }
             case ">" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
