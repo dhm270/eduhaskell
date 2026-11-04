@@ -202,7 +202,7 @@ object Evaluator {
             }
             case _ => {}
         }
-        // TODO: implement the ability to check against multiple function definition clauses?
+        
         val maybeNewEnv: Option[Environment] = matchAndExtendEnvironment(env, pat, comparison)
         if (maybeNewEnv.isDefined) {
             val newEnv = maybeNewEnv.get
@@ -253,12 +253,23 @@ object Evaluator {
                 Right(FunctionValue(func))
             }
             case Function(alts) => {
-                // TODO: do something about when there is more than one of these
-                if (alts.length == 1) {
-                    evaluate(env, alts(0))
-                } else {
-                    Left(NotImplemented())
+                def func(lazyValue: LazyValue): Either[Error, Value] = {
+                    def f(acc: Either[Error, Value], curr: PartialFun): Either[Error, Value] = {
+                        acc match {
+                            case Right(_) => acc // we have already successfully pattern matched
+                            case Left(PatternMatchError()) => {
+                                // i.e. we haven't successfully matched yet, so we keep going
+                                curr match {
+                                    case PartialFun(pattern, guard, expr) => patternMatch(env, pattern, lazyValue, expr)
+                                }
+                            }
+                            case Left(_) => acc
+                        }
+                    }
+                    val x: Either[Error, Value] = Left(PatternMatchError())
+                    alts.foldLeft(x)(f)
                 }
+                Right(FunctionValue(func))
             }
 
             case Bra(e) => evaluate(env, e)
