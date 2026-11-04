@@ -127,16 +127,45 @@ object Evaluator {
             }
 
             case Tuple(patternExprs) => {
-                // TODO
-                None
+                val got = comparison.get()
+                got match {
+                    case Right(TupleValue(lazyVals)) => {
+                        if (patternExprs.length == lazyVals.length) {
+                            def f(acc: Option[Environment], curr: (Expr, LazyValue)): Option[Environment] = {
+                                curr match {
+                                    case (e, l) => {
+                                        if (acc.isDefined) {
+                                            matchAndExtendEnvironment(acc.get, e, l)
+                                        } else {
+                                            None
+                                        }
+                                    }
+                                    case _ => None
+                                }
+                            }
+                            val x: Option[Environment] = Some(env)
+                            patternExprs.zip(lazyVals).foldLeft(x)(f)
+                        } else {
+                            None
+                        }
+                    }
+                    case _ => None
+                }
             }
 
             case Sequence(patternExprs) => {
-                // TODO
-                None
+                val got = comparison.get()
+                if (patternExprs.length == 0) {
+                    got match {
+                        case Right(NilValue()) => Some(env)
+                        case _ => None
+                    }
+                } else {
+                    matchAndExtendEnvironment(env, Binop(":", patternExprs(0), Sequence(patternExprs.drop(1))), comparison)
+                }
             }
 
-            case Bra(Binop(":", l, r)) => {
+            case Binop(":", l, r) => {
                 val got = comparison.get()
                 got match {
                     case Right(ConsValue(head, tail)) => {
@@ -150,6 +179,8 @@ object Evaluator {
                     case _ => None
                 }
             }
+
+            case Bra(e) => matchAndExtendEnvironment(env, e, comparison)
 
             case _ => None
         }
@@ -194,8 +225,10 @@ object Evaluator {
                 if (exprs.length == 1) {
                     evaluate(env, exprs(0))
                 } else {
-                    // TODO
-                    Left(NotImplemented())
+                    def evalAsLazyVal(e: Expr): LazyValue = {
+                        LazyValue(() => evaluate(env, e))
+                    }
+                    Right(TupleValue(exprs.map(evalAsLazyVal(_))))
                 }
             }
 

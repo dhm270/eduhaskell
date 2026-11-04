@@ -50,6 +50,11 @@ case class NilValue() extends Value {
     override def getType(): String = "Nil" // TODO: better type
 }
 
+case class TupleValue(vals: Seq[LazyValue]) extends Value {
+    lazy val eagerSource = vals.map(_.eagerSource).mkString("(", ", ", ")")
+    override def getType(): String = "Tuple" // TODO: better type
+}
+
 case class LazyValue(private var getter: () => Either[Error, Value]) {
     lazy val eagerSource: String = {
         val got = this.getter()
