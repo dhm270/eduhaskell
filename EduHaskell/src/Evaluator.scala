@@ -597,25 +597,35 @@ object Evaluator {
     }
 
     def valuesEqual(lValue: Either[Error, Value], rValue: Either[Error, Value]): Either[Error, Value] = {
+        def m(l: Value, r: Value): String = {
+            s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"
+        }
         lValue match {
             case Right(l @ IntValue(int1)) => {
                 rValue match {
                     case Right(IntValue(int2)) => Right(BooleanValue(int1 == int2))
-                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case Right(r) => Left(TypeError(m(l, r)))
                     case x => x
                 }
             }
             case Right(l @ RealValue(real1)) => {
                 rValue match {
                     case Right(RealValue(real2)) => Right(BooleanValue(real1 == real2))
-                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case Right(r) => Left(TypeError(m(l, r)))
                     case x => x
                 }
             }
             case Right(l @ StringValue(quote1)) => {
                 rValue match {
                     case Right(StringValue(quote2)) => Right(BooleanValue(quote1.body == quote2.body))
-                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case Right(r) => Left(TypeError(m(l, r)))
+                    case x => x
+                }
+            }
+            case Right(l @ BooleanValue(bool1)) => {
+                rValue match {
+                    case Right(BooleanValue(bool2)) => Right(BooleanValue(bool1 == bool2))
+                    case Right(r) => Left(TypeError(m(l, r)))
                     case x => x
                 }
             }
@@ -629,7 +639,7 @@ object Evaluator {
                         }
                     }
                     case Right(NilValue()) => Right(BooleanValue(false))
-                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case Right(r) => Left(TypeError(m(l, r)))
                     case x => x
                 }
             }
@@ -637,7 +647,7 @@ object Evaluator {
                 rValue match {
                     case Right(NilValue()) => Right(BooleanValue(true))
                     case Right(ConsValue(_, _)) => Right(BooleanValue(false))
-                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case Right(r) => Left(TypeError(m(l, r)))
                     case x => x
                 }
             }
@@ -663,10 +673,10 @@ object Evaluator {
                             val x: Either[Error, Value] = Right(BooleanValue(true))
                             vals1.zip(vals2).foldLeft(x)(f)
                         } else {
-                            Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                            Left(TypeError(m(l, r)))
                         }
                     }
-                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case Right(r) => Left(TypeError(m(l, r)))
                     case x => x
                 }
             }
