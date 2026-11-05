@@ -486,33 +486,7 @@ object Evaluator {
                 // TODO: some kind of type checking
                 Right(ConsValue(LazyValue(() => lValue), LazyValue(() => rValue)))
             }
-            case "==" => {
-                lValue match {
-                    case Right(l @ IntValue(int1)) => {
-                        rValue match {
-                            case Right(IntValue(int2)) => Right(BooleanValue(int1 == int2))
-                            case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
-                            case x => x
-                        }
-                    }
-                    case Right(l @ RealValue(real1)) => {
-                        rValue match {
-                            case Right(RealValue(real2)) => Right(BooleanValue(real1 == real2))
-                            case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
-                            case x => x
-                        }
-                    }
-                    case Right(l @ StringValue(quote1)) => {
-                        rValue match {
-                            case Right(StringValue(quote2)) => Right(BooleanValue(quote1.body == quote2.body))
-                            case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
-                            case x => x
-                        }
-                    }
-                    case Right(x) => Left(NotImplemented())
-                    case x => x
-                }
-            }
+            case "==" => valuesEqual(lValue, rValue)
             case "<" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
@@ -619,6 +593,56 @@ object Evaluator {
                     case x => x
                 }
             }
+        }
+    }
+
+    def valuesEqual(lValue: Either[Error, Value], rValue: Either[Error, Value]): Either[Error, Value] = {
+        lValue match {
+            case Right(l @ IntValue(int1)) => {
+                rValue match {
+                    case Right(IntValue(int2)) => Right(BooleanValue(int1 == int2))
+                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case x => x
+                }
+            }
+            case Right(l @ RealValue(real1)) => {
+                rValue match {
+                    case Right(RealValue(real2)) => Right(BooleanValue(real1 == real2))
+                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case x => x
+                }
+            }
+            case Right(l @ StringValue(quote1)) => {
+                rValue match {
+                    case Right(StringValue(quote2)) => Right(BooleanValue(quote1.body == quote2.body))
+                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case x => x
+                }
+            }
+            case Right(l @ ConsValue(head1, tail1)) => {
+                rValue match {
+                    case Right(ConsValue(head2, tail2)) => {
+                        val headEqualityResult = valuesEqual(head1.get(), head2.get())
+                        headEqualityResult match {
+                            case Right(BooleanValue(true)) => valuesEqual(tail1.get(), tail2.get())
+                            case x => x
+                        }
+                    }
+                    case Right(NilValue()) => Right(BooleanValue(false))
+                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case x => x
+                }
+            }
+            case Right(l @ NilValue()) => {
+                rValue match {
+                    case Right(NilValue()) => Right(BooleanValue(true))
+                    case Right(ConsValue(_, _)) => Right(BooleanValue(false))
+                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case x => x
+                }
+            }
+            case Right(x) => Left(NotImplemented())
+            case x => x
         }
     }
 
