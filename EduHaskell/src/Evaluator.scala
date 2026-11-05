@@ -641,6 +641,33 @@ object Evaluator {
                     case x => x
                 }
             }
+            case Right(l @ TupleValue(vals1)) => {
+                rValue match {
+                    case Right(r @ TupleValue(vals2)) => {
+                        if (vals1.length == vals2.length) {
+                            def f(acc: Either[Error, Value], curr: (LazyValue, LazyValue)): Either[Error, Value] = {
+                                acc match {
+                                    case Right(BooleanValue(true)) => {
+                                        curr match {
+                                            case (l, r) => {
+                                                val lValue = l.get()
+                                                val rValue = r.get()
+                                                valuesEqual(lValue, rValue)
+                                            }
+                                            case _ => Right(BooleanValue(false))
+                                        }
+                                    }
+                                    case _ => acc
+                                }
+                            }
+                            val x: Either[Error, Value] = Right(BooleanValue(true))
+                            vals1.zip(vals2).foldLeft(x)(f)
+                        } else {
+                            Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                        }
+                    }
+                }
+            }
             case Right(x) => Left(NotImplemented())
             case x => x
         }
