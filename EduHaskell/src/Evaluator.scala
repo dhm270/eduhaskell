@@ -629,6 +629,9 @@ object Evaluator {
                     case x => x
                 }
             }
+            case Right(l @ FunctionValue(_)) => {
+                Left(TypeError("functions cannot be compared"))
+            }
             case Right(l @ ConsValue(head1, tail1)) => {
                 rValue match {
                     case Right(ConsValue(head2, tail2)) => {
@@ -680,8 +683,7 @@ object Evaluator {
                     case x => x
                 }
             }
-            case Right(x) => Left(NotImplemented())
-            case x => x
+            case x @ Left(_) => x
         }
     }
 
