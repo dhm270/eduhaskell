@@ -666,6 +666,8 @@ object Evaluator {
                             Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
                         }
                     }
+                    case Right(r) => Left(TypeError(s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
+                    case x => x
                 }
             }
             case Right(x) => Left(NotImplemented())
