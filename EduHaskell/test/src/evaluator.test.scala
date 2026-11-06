@@ -213,5 +213,14 @@ class EvaluatorTests extends munit.FunSuite {
                 ))
             )
         )
+        assert(valuesEqualInEvaluator(result, expectedResult))
+    }
+
+    test("Evaluate nested pattern matching") {
+        val result = parseAndEvaluate(
+            "let f = { 1 1 -> 2 | x y -> x * y } in f 1 2"
+        )
+        val expectedResult = IntValue(2)
+        assert(result == expectedResult)
     }
 }
