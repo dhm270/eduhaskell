@@ -92,6 +92,10 @@ object syntax {
         lazy val source = s"${alts.map(_.source).mkString(" | ") }"
     }
 
+    case class FunctionWithClosures(alts: Seq[(Environment, PartialFun)]) extends Expr {
+        lazy val source = s"${alts.map(_._2.source).mkString(" | ")}"
+    }
+
     case class Bra(e: Expr) extends Expr {
         lazy val source = s"(${e.source})"
         override lazy val original: Expr = Tuple(List(e))

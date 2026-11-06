@@ -187,6 +187,11 @@ object Evaluator {
     }
 
     def patternMatch(env: Environment, pattern: Expr, comparison: LazyValue, expr: Expr): Either[Error, Value] = {
+        val (_, result) = patternMatchAndReturnEnvironment(env, pattern, comparison, expr)
+        result
+    }
+
+    def patternMatchAndReturnEnvironment(env: Environment, pattern: Expr, comparison: LazyValue, expr: Expr): (Environment, Either[Error, Value]) = {
         // If the pattern is multiple things, then we convert it.
         // Instead, we want to think of this as a function that takes only
         // a single parameter and, if it is defined to have "multiple parameters",
@@ -206,9 +211,9 @@ object Evaluator {
         val maybeNewEnv: Option[Environment] = matchAndExtendEnvironment(env, pat, comparison)
         if (maybeNewEnv.isDefined) {
             val newEnv = maybeNewEnv.get
-            evaluate(newEnv, e)
+            (maybeNewEnv.get, evaluate(newEnv, e))
         } else {
-            Left(PatternMatchError())
+            (env, Left(PatternMatchError()))
         }
     }
 
@@ -252,25 +257,8 @@ object Evaluator {
                 }
                 Right(FunctionValue(func))
             }
-            case Function(alts) => {
-                def func(lazyValue: LazyValue): Either[Error, Value] = {
-                    def f(acc: Either[Error, Value], curr: PartialFun): Either[Error, Value] = {
-                        acc match {
-                            case Right(_) => acc // we have already successfully pattern matched
-                            case Left(PatternMatchError()) => {
-                                // i.e. we haven't successfully matched yet, so we keep going
-                                curr match {
-                                    case PartialFun(pattern, guard, expr) => patternMatch(env, pattern, lazyValue, expr)
-                                }
-                            }
-                            case Left(_) => acc
-                        }
-                    }
-                    val x: Either[Error, Value] = Left(PatternMatchError())
-                    alts.foldLeft(x)(f)
-                }
-                Right(FunctionValue(func))
-            }
+            case Function(alts) => evaluateFunction(env, alts)
+            case FunctionWithClosures(closureAlts) => evaluateFunctionWithClosures(closureAlts)
 
             case Bra(e) => evaluate(env, e)
             case Assoc(op, exprs) => Left(NotImplemented())
@@ -723,5 +711,59 @@ object Evaluator {
             case Right(x) => Left(TypeError(s"if-statement condition is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}"))
             case x => x
         }
+    }
+
+    def evaluateFunction(env: Environment, alts: Seq[PartialFun]): Either[Error, Value] = {
+        evaluateFunctionWithClosures(List.fill(alts.length)(env).zip(alts))
+    }
+
+    def evaluateFunctionWithClosures(alts: Seq[(Environment, PartialFun)]): Either[Error, Value] = {
+        def func(lazyValue: LazyValue): Either[Error, Value] = {
+            alts(0) match {
+                case (env, PartialFun(Apply(_, _), _, _)) => {
+                    // i.e. there is another argument after this one, so we will certainly
+                    // return another function rather than an actual value
+                    def f(acc: Seq[(Environment, PartialFun)], curr: (Environment, PartialFun)): Seq[(Environment, PartialFun)] = {
+                        // Find all possible pattern matches
+                        curr match {
+                            case (env, PartialFun(pattern, guard, expr)) => {
+                                val (newEnv, result) = patternMatchAndReturnEnvironment(env, pattern, lazyValue, expr)
+                                result match {
+                                    case Left(PatternMatchError()) => acc
+                                    case _ => {
+                                        // Remove the first argument from the partial function, since we've already evaluated it
+                                        val editedPartialFun = createPartialFun(pattern, expr)
+                                        acc ++ List((newEnv, editedPartialFun.asInstanceOf[PartialFun]))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    val x: Seq[(Environment, PartialFun)] = List()
+                    val matches = alts.foldLeft(x)(f)
+                    // In the line below, `env` is a dummy value.
+                    // The actual clause in `evaluate` doesn't use it.
+                    evaluate(env, FunctionWithClosures(matches))
+                }
+                case (_, _) => {
+                    // this is the last argument, so we will return a non-function
+                    def f(acc: Either[Error, Value], curr: (Environment, PartialFun)): Either[Error, Value] = {
+                        acc match {
+                            case Right(_) => acc // we have already successfully pattern matched
+                            case Left(PatternMatchError()) => {
+                                // i.e. we haven't successfully matched yet, so we keep going
+                                curr match {
+                                    case (env, PartialFun(pattern, guard, expr)) => patternMatch(env, pattern, lazyValue, expr)
+                                }
+                            }
+                            case Left(_) => acc
+                        }
+                    }
+                    val x: Either[Error, Value] = Left(PatternMatchError())
+                    alts.foldLeft(x)(f)
+                }
+            }
+        }
+        Right(FunctionValue(func))
     }
 }
