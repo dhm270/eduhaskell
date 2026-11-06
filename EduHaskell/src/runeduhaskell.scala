@@ -32,7 +32,7 @@ object RunEduHaskell {
         var replEnv = Environment.empty
 
         while (state == RUNNING) {
-            print("> ")
+            if (interactive) print("> ")
             val parser = LRParser.Pull[Token](Components)(scanner.sourceLocation)
 
             parser.reductionOnError = true

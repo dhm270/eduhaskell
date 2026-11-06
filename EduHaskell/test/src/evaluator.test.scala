@@ -192,4 +192,26 @@ class EvaluatorTests extends munit.FunSuite {
         val expectedResult = BooleanValue(true)
         assert(result == expectedResult)
     }
+
+    test("Evaluate multiple pattern matches") {
+        val result = parseAndEvaluateWithoutExtraction(
+            "let map f = { (x:xs) -> f x : map f xs | [] -> [] } in map (\\x -> x * 2) [1..3]"
+        )
+        val expectedResult = Right(
+            ConsValue(
+                LazyValue(() => Right(IntValue(2))),
+                LazyValue(() => Right(
+                    ConsValue(
+                        LazyValue(() => Right(IntValue(4))),
+                        LazyValue(() => Right(
+                            ConsValue(
+                                LazyValue(() => Right(IntValue(6))),
+                                LazyValue(() => Right(NilValue()))
+                            )
+                        ))
+                    )
+                ))
+            )
+        )
+    }
 }
