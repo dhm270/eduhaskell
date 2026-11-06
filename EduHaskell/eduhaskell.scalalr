@@ -85,8 +85,8 @@
             }
             lastLocation = SourceLocation(chars.lines, chars.chars)
             theChar match {
-                case c if c.isLetter =>
-                    val prefix = chars.takeWhile(_.isLetterOrDigit)
+                case c if c.isLetter || c == '_' =>
+                    val prefix = chars.takeWhile(x => x.isLetterOrDigit || x == '_')
                     val string = prefix.mkString("")
                     tokenMap.getOrElse(string, mkIDENTIFIER(string))
 
@@ -193,7 +193,7 @@
 }
 
 %token ID(String) INT(Long) REAL(Double) STRING(eduhaskell.syntax.Quotation) NL LEXICALERROR(String) ENDOFFILE
-%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `_` `\` `|` `->` `<-` `..`
+%token `where` `{` `}` `(` `)` `;` `,` `[` `]` `\` `|` `->` `<-` `..`
 %token `if` `then` `else` `let` `in` `case` `of`
 
 %prec  LOWEST
