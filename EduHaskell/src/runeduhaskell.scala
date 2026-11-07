@@ -88,7 +88,7 @@ object RunEduHaskell {
         var replEnv = Environment.empty
 
         while (state == RUNNING) {
-            if (interactive) print("> ")
+            if (interactive) print("$ ")
             val parser = LRParser.Pull[Token](Components)(scanner.sourceLocation)
 
             parser.reductionOnError = true
@@ -110,7 +110,7 @@ object RunEduHaskell {
                         val result = Evaluator.evaluate(replEnv, instruction.asInstanceOf[Expr])
                         result match {
                             case Right(r) => {
-                                print("< ")
+                                print("= ")
                                 LazyValue.lazyPrint(r)
                                 println()
                             }
