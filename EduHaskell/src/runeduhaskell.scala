@@ -118,7 +118,14 @@ object RunEduHaskell {
                             }
                         }
                     } else if (instruction.isInstanceOf[Definition]) {
-                        replEnv = Evaluator.withDefinition(replEnv, instruction.asInstanceOf[Definition])
+                        val extendedEnvironment = Evaluator.withDefinition(replEnv, instruction.asInstanceOf[Definition])
+                        extendedEnvironment match {
+                            case Right(newEnv) => replEnv = newEnv
+                            case Left(e) => {
+                                print("! ")
+                                println(e.message)
+                            }
+                        }
                     } else {
                         throw new Exception("Invalid state")
                     }

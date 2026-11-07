@@ -308,8 +308,8 @@ guardedEquation: GuardedEquation = pattern:pattern '|' rhss:RHSs where:whereClau
 RHS: GuardedResult = guard:expression '=' maybeEOL expression:expr { GuardedResult($guard, $expression) }
                      | error => ()
 
-RHSs: List[GuardedResult] = rhs: RHS NL { List($rhs) }
-                            | rhs: RHS NL '|' rhss: RHSs { $rhs :: $rhss }
+RHSs: List[GuardedResult] = rhs: RHS { List($rhs) }
+                            | rhs: RHS '|' rhss: RHSs { $rhs :: $rhss }
 
 whereClause: List[Definition] = `where` maybeEOL equation { List($equation) }
                                 | `where` maybeEOL '{' maybeEOL equations maybeEOL '}' { $equations.reverse }
