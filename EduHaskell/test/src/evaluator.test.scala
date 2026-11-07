@@ -255,4 +255,12 @@ class EvaluatorTests extends munit.FunSuite {
         val expectedResult = IntValue(12)
         assert(result == expectedResult)
     }
+
+    test("Evaluate short-circuitable boolean expression") {
+        val result = parseAndEvaluate(
+            "let undefined = undefined in (0 == 1) && undefined"
+        )
+        val expectedResult = BooleanValue(false)
+        assert(result == expectedResult)
+    }
 }

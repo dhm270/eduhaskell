@@ -705,26 +705,28 @@ object Evaluator {
             }
             case "||" => {
                 lValue match {
-                    case Right(l @ BooleanValue(bool1)) => {
+                    case Right(l @ BooleanValue(false)) => {
                         rValue match {
-                            case Right(BooleanValue(bool2)) => Right(BooleanValue(bool1 || bool2))
+                            case r @ Right(BooleanValue(_)) => r
                             case Right(r) => Left(TypeError(s"operands of || have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
                             case x => x
                         }
                     }
+                    case Right(BooleanValue(true)) => Right(BooleanValue(true))
                     case Right(x) => Left(NotImplemented())
                     case x => x
                 }
             }
             case "&&" => {
                 lValue match {
-                    case Right(l @ BooleanValue(bool1)) => {
+                    case Right(l @ BooleanValue(true)) => {
                         rValue match {
-                            case Right(BooleanValue(bool2)) => Right(BooleanValue(bool1 && bool2))
+                            case r @ Right(BooleanValue(_)) => r
                             case Right(r) => Left(TypeError(s"operands of && have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"))
                             case x => x
                         }
                     }
+                    case Right(BooleanValue(false)) => Right(BooleanValue(false))
                     case Right(x) => Left(NotImplemented())
                     case x => x
                 }
