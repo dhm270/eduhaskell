@@ -217,29 +217,6 @@
 %include {
     import org.sufrin.scalalr.Shortcut._
     import eduhaskell.syntax._
-    import org.sufrin.utility.PrettyPrint._
-
-    def translate(clause: TREE): TREE = {
-        import eduhaskell.visitor.Visitors._
-        import eduhaskell.visitor.Dispatch._
-        clause match {
-            case it: Expr => it.visit(DetupleExpression)
-            case it: Definition => it.visit(DetupleDefinition)
-        }
-    }
-
-    def layout(clause: TREE): TREE = {
-        import eduhaskell.visitor.Dispatch._
-        import eduhaskell.visitor.Formatting._
-        val scheme = clause match {
-            case it: Expr => ExprFormat(it)
-            case it: Definition => DefinitionFormat(it)
-        }
-        print("Parsed as: ")
-        println(scheme.render(40))
-        println("with tree:")
-        clause
-    }
 
     def MakeEquation(lhs: Expr, rhs: Expr): Definition = {
         rhs match {
@@ -251,7 +228,7 @@
 
 program: Unit = (NL)? (anAction NL)+ ENDOFFILE { () }
 
-anAction: Shortcut = onePhrase { layout($onePhrase); translate($onePhrase).prettyPrint(); Instruct($onePhrase) }
+anAction: Shortcut = onePhrase { Instruct($onePhrase) }
                      | ENDOFFILE { Accept(()) }
 
 onePhrase: TREE = expr | equation | typeDef | guardedEquation
