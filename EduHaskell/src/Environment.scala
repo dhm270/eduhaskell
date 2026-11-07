@@ -25,9 +25,9 @@ case class RealValue(value: Double) extends Value {
     override def getType(): String = "Real"
 }
 
-case class StringValue(value: Quotation) extends Value {
-    lazy val eagerSource = value.toString
-    override def getType(): String = "String"
+case class CharValue(value: Char) extends Value {
+    lazy val eagerSource = s"'${value}'"
+    override def getType(): String = "Character"
 }
 
 case class BooleanValue(value: Boolean) extends Value {

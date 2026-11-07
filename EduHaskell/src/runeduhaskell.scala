@@ -20,24 +20,22 @@ object RunEduHaskell {
 
     def main(args: Array[String]): Unit = {
         var fileName = "/dev/console"
-        if (!args.isEmpty) {
-            var i = 0
-            while (i < args.length) {
-                val arg = args(i)
-                arg match {
-                    case "-d" | "--debug-level" =>
-                        if (i + 1 < args.length) {
-                            this.debugLevel = args(i + 1).toInt
-                            i += 1
-                        } else {
-                            return printUsage()
-                        }
-                    case "-h" | "--help" =>
+        var i = 0
+        while (i < args.length) {
+            val arg = args(i)
+            arg match {
+                case "-d" | "--debug-level" =>
+                    if (i + 1 < args.length) {
+                        this.debugLevel = args(i + 1).toInt
+                        i += 1
+                    } else {
                         return printUsage()
-                    case _ => fileName = arg
-                }
-                i += 1
+                    }
+                case "-h" | "--help" =>
+                    return printUsage()
+                case _ => fileName = arg
             }
+            i += 1
         }
         try {
             inputFrom(fileName)

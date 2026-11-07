@@ -121,9 +121,40 @@ object Evaluator {
             case Quote(value) => {
                 val got = comparison.get()
                 got match {
-                    case Right(StringValue(quote)) => {
-                        if (quote == value) {
+                    case Right(CharValue(c)) => {
+                        if (value.opening == "'" && value.body == c.toString) {
                             Some(env)
+                        } else {
+                            None
+                        }
+                    }
+                    case Right(c @ ConsValue(_, _)) => {
+                        var str = ""
+                        var pointer: Value = c
+                        var extracting = true
+                        var valid = true
+                        while (extracting && valid) {
+                            pointer match {
+                                case NilValue() => extracting = false
+                                case ConsValue(l, r) => {
+                                    val charGot = l.get()
+                                    charGot match {
+                                        case Right(CharValue(c)) => str += c
+                                        case _ => valid = false
+                                    }
+                                    r.get() match {
+                                        case Right(x) => pointer = x
+                                        case _ => valid = false
+                                    }
+                                }
+                            }
+                        }
+                        if (valid) {
+                            if (value.body == str) {
+                                Some(env)
+                            } else {
+                                None
+                            }
                         } else {
                             None
                         }
@@ -230,7 +261,7 @@ object Evaluator {
 
             case Num(value) => Right(IntValue(value))
             case Real(value) => Right(RealValue(value))
-            case Quote(quote) => Right(StringValue(quote))
+            case Quote(quote) => quoteToValue(quote)
 
             case Tuple(exprs) => {
                 if (exprs.length == 1) {
@@ -268,6 +299,29 @@ object Evaluator {
 
             case Bra(e) => evaluate(env, e)
             case Assoc(op, exprs) => Left(NotImplemented())
+        }
+    }
+
+    def stringToStringValue(str: String): Value = {
+        if (str == "") {
+            NilValue()
+        } else {
+            ConsValue(
+                LazyValue(() => Right(CharValue(str(0)))),
+                LazyValue(() => Right(stringToStringValue(str.drop(1))))
+            )
+        }
+    }
+
+    def quoteToValue(quote: Quotation): Either[Error, Value] = {
+        if (quote.opening != quote.closing) {
+            Left(SyntaxError("mismatched single and double quotes"))
+        } else if (quote.opening == "\"") {
+            Right(stringToStringValue(quote.body))
+        } else if (quote.body.length > 1) {
+            Left(SyntaxError("single quotes define a Character type, so must only contain a single character"))
+        } else {
+            Right(CharValue(quote.body(0)))
         }
     }
 
@@ -609,9 +663,9 @@ object Evaluator {
                     case x => x
                 }
             }
-            case Right(l @ StringValue(quote1)) => {
+            case Right(l @ CharValue(char1)) => {
                 rValue match {
-                    case Right(StringValue(quote2)) => Right(BooleanValue(quote1.body == quote2.body))
+                    case Right(CharValue(char2)) => Right(BooleanValue(char1 == char2))
                     case Right(r) => Left(TypeError(m(l, r)))
                     case x => x
                 }
