@@ -7,33 +7,36 @@ import eduhaskell.Environment
 object Evaluator {
     def withDefinition(env: Environment, defn: Definition): Environment = {
         defn match {
-            case Equation(lhs, rhs) => {
-                lhs match {
-                    case Id(name) => {
+            case Equation(lhs, rhs) => withEquationDefinition(env, lhs, rhs)
+            case WhereEquation(lhs, rhs, defs) => withEquationDefinition(withDefinitions(env, defs), lhs, rhs)
+        }
+    }
+
+    def withEquationDefinition(env: Environment, lhs: Expr, rhs: Expr): Environment = {
+        lhs match {
+            case Id(name) => {
+                lazy val newEnv: Environment = {
+                    lazy val value = evaluate(newEnv, rhs)
+                    env.lazyDefine(name, LazyValue(() => value))
+                }
+                newEnv
+            }
+            case Apply(l, r) => {
+                val exprs = flattenApply(lhs)
+                exprs(0) match {
+                    case Id(funcName) => {
+                        if (env.isFunctionInScope(funcName)) {
+                            // If the function is already defined, then we want to warn the user that they have
+                            // redefined an existing function rather than extending it.
+                            println(s"% Warning: existing function definition for ${funcName} overwritten rather than extended") // TODO: handle this better
+                        }
+                        val asPartialFun = createPartialFun(lhs, rhs)
                         lazy val newEnv: Environment = {
-                            lazy val value = evaluate(newEnv, rhs)
-                            env.lazyDefine(name, LazyValue(() => value))
+                            lazy val value = evaluate(newEnv, asPartialFun)
+                            env.registerFunction(funcName)
+                            env.lazyDefine(funcName, LazyValue(() => value))
                         }
                         newEnv
-                    }
-                    case Apply(l, r) => {
-                        val exprs = flattenApply(lhs)
-                        exprs(0) match {
-                            case Id(funcName) => {
-                                if (env.isFunctionInScope(funcName)) {
-                                    // If the function is already defined, then we want to warn the user that they have
-                                    // redefined an existing function rather than extending it.
-                                    println(s"% Warning: existing function definition for ${funcName} overwritten rather than extended") // TODO: handle this better
-                                }
-                                val asPartialFun = createPartialFun(lhs, rhs)
-                                lazy val newEnv: Environment = {
-                                    lazy val value = evaluate(newEnv, asPartialFun)
-                                    env.registerFunction(funcName)
-                                    env.lazyDefine(funcName, LazyValue(() => value))
-                                }
-                                newEnv
-                            }
-                        }
                     }
                 }
             }
