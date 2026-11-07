@@ -239,4 +239,20 @@ class EvaluatorTests extends munit.FunSuite {
         val expectedResult = IntValue(5)
         assert(result == expectedResult)
     }
+
+    test("Evaluate with multiple definitions in different scopes") {
+        val result = parseAndEvaluate(
+            "let x = 10 in let f y = x + y in let x = 100 in f 5"
+        )
+        val expectedResult = IntValue(15)
+        assert(result == expectedResult)
+    }
+
+    test("Evaluate ignoring unused variable") {
+        val result = parseAndEvaluate(
+            "let undefined = undefined in let f x = x * 2 in f 6"
+        )
+        val expectedResult = IntValue(12)
+        assert(result == expectedResult)
+    }
 }
