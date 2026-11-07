@@ -223,4 +223,20 @@ class EvaluatorTests extends munit.FunSuite {
         val expectedResult = IntValue(2)
         assert(result == expectedResult)
     }
+
+    test("Evaluate deep pattern matching") {
+        val result = parseAndEvaluate(
+            "let f = { [] -> 0 | (x:[]) -> 1 | (x:y:[]) -> 2 | (x:y:z:xs) -> 3 } in f [1..5]"
+        )
+        val expectedResult = IntValue(3)
+        assert(result == expectedResult)
+    }
+
+    test("Evaluate list length") {
+        val result = parseAndEvaluate(
+            "let length = { [] -> 0 | (x:xs) -> 1 + length xs } in length [1..5]"
+        )
+        val expectedResult = IntValue(5)
+        assert(result == expectedResult)
+    }
 }

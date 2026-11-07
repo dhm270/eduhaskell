@@ -134,8 +134,7 @@ class Environment(private var map: Map[String, LazyValue], private var functions
         if (idents.length == values.length) {
             idents.zip(values).foldLeft(this)((acc, curr) => curr match { case (ident, value) => acc.define(ident, value) })
         } else {
-            // TODO
-            this
+            throw new java.lang.IllegalArgumentException("idents must be the same length as values")
         }
     }
 
