@@ -109,7 +109,11 @@ object LazyValue {
     }
 }
 
-class Environment(private var map: Map[String, LazyValue]) {
+class Environment(private var map: Map[String, LazyValue], private var functionsInScope: List[String]) {
+    def extended(ident: String, lazyValue: LazyValue): Environment = {
+        new Environment(this.map.updated(ident, lazyValue), this.functionsInScope)
+    }
+
     def find(ident: String): LazyValue = {
         if (map.isDefinedAt(ident)) {
             map(ident)
@@ -119,11 +123,11 @@ class Environment(private var map: Map[String, LazyValue]) {
     }
 
     def define(ident: String, value: Value): Environment = {
-        new Environment(this.map.updated(ident, LazyValue(() => Right(value))))
+        this.extended(ident, LazyValue(() => Right(value)))
     }
 
     def lazyDefine(ident: String, lazyValue: LazyValue): Environment = {
-        new Environment(this.map.updated(ident, lazyValue))
+        this.extended(ident, lazyValue)
     }
 
     def defineMultiple(idents: List[String], values: List[Value]): Environment = {
@@ -134,8 +138,16 @@ class Environment(private var map: Map[String, LazyValue]) {
             this
         }
     }
+
+    def isFunctionInScope(ident: String): Boolean = this.functionsInScope.contains(ident)
+
+    def registerFunction(ident: String): Unit = {
+        if (!this.isFunctionInScope(ident)) {
+            this.functionsInScope = ident :: this.functionsInScope
+        }
+    }
 }
 
 object Environment {
-    def empty: Environment = new Environment(Map())
+    def empty: Environment = new Environment(Map(), List())
 }
