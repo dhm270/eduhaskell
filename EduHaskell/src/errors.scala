@@ -26,4 +26,14 @@ object errors {
     case class SyntaxError(message: String) extends Error {}
 
     case class TypeError(message: String) extends Error {}
+
+    case class ModuleLoadError(message: String) extends Error {}
+
+    case class ModuleContainsTopLevelExpressionsError() extends Error {
+        val message = "file being loaded as a module contains top level expressions, which is illegal"
+    }
+
+    case class ModuleHasDuplicatedDefinitionsError(duplicatedName: String) extends Error {
+        val message = s"file being loaded has multiple definitions for ${duplicatedName}"
+    }
 }

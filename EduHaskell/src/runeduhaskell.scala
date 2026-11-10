@@ -12,6 +12,7 @@ import eduhaskell.Evaluator
 import eduhaskell.Environment
 import eduhaskell.LazyValue
 import eduhaskell.syntax._
+import eduhaskell.errors._
 
 import LRParser._
 
@@ -19,8 +20,9 @@ object RunEduHaskell {
     var debugLevel = 0
 
     def main(args: Array[String]): Unit = {
-        var fileName = "/dev/console"
+        var fileName = ""
         var i = 0
+        var shouldStartRepl = true
         while (i < args.length) {
             val arg = args(i)
             arg match {
@@ -33,12 +35,26 @@ object RunEduHaskell {
                     }
                 case "-h" | "--help" =>
                     return printUsage()
+                case "-r" | "--no-repl" =>
+                    shouldStartRepl = false
                 case _ => fileName = arg
             }
             i += 1
         }
         try {
-            inputFrom(fileName)
+            var replEnv: Environment = Environment.empty
+            if (fileName != "") {
+                val loadFileResult = loadFile(fileName)
+                loadFileResult match {
+                    case Right(env) => replEnv = env
+                    case Left(e) => {
+                        shouldStartRepl = false
+                        println("Error while loading file:")
+                        println(e.message)
+                    }
+                }
+            }
+            if (shouldStartRepl) repl(replEnv)
         } catch {
             case e: java.nio.file.NoSuchFileException => {
                 println(s"Input file '${fileName}' does not exist. Aborting.")
@@ -53,6 +69,7 @@ object RunEduHaskell {
         println("Usage: eduhaskell [flags-and-files]")
         println("  -d, --debug-level  Configure the level of debug information outputted")
         println("  -h, --help         Display this help and exit")
+        println("  -r, --no-repl      Just run the input file; don't also start the REPL.")
     }
 
     def translate(clause: TREE): TREE = {
@@ -77,16 +94,48 @@ object RunEduHaskell {
         clause
     }
 
-    def inputFrom(path: String): Unit = {
-        val interactive = path == "/dev/console"
+    def loadFile(path: String): Either[Error, Environment] = {
         var state: ParseState = RUNNING
         val input = SourceTextCursor(Path.of(path))
         val scanner = makeScanner(input)
 
-        var replEnv = Environment.empty
+        var result: Either[Error, Environment] = Left(ModuleLoadError("loading the file did not complete properly"))
+        var definitions: List[Definition] = List()
 
         while (state == RUNNING) {
-            if (interactive) print("$ ")
+            val parser = LRParser.Pull[Token](Components)(scanner.sourceLocation)
+            parser.reductionOnError = true
+
+            state = parser.run(scanner.next)
+
+            state match {
+                case ERRONEOUS(message) =>
+                    result = Left(ModuleLoadError(message))
+                case INSTRUCTED(instruction) =>
+                    if (instruction.isInstanceOf[Definition]) {
+                        definitions = definitions :+ instruction.asInstanceOf[Definition]
+                        state = RUNNING
+                    } else if (instruction.isInstanceOf[Expr]) {
+                        result = Left(ModuleContainsTopLevelExpressionsError())
+                    } else {
+                        result = Left(ModuleLoadError("Invalid state"))
+                    }
+                case _ => {}
+            }
+        }
+
+        Evaluator.parseAllDefinitions(Environment.empty, definitions)
+    }
+
+    def repl(initialReplEnv: Environment): Unit = {
+        var replEnv = initialReplEnv
+
+        var state: ParseState = RUNNING
+        val input = SourceTextCursor(Path.of("/dev/console"))
+        val scanner = makeScanner(input)
+
+        while (state == RUNNING) {
+            print("$ ")
             val parser = LRParser.Pull[Token](Components)(scanner.sourceLocation)
 
             parser.reductionOnError = true
@@ -96,7 +145,7 @@ object RunEduHaskell {
             state match {
                 case ERRONEOUS(message) =>
                     println(message)
-                    if (interactive) state = RUNNING
+                    state = RUNNING
                 case INSTRUCTED(instruction) =>
                     if (this.debugLevel >= 2) {
                         layout(instruction.asInstanceOf[TREE])

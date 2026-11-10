@@ -52,7 +52,7 @@ object Evaluator {
                                 def f(_case: GuardedResult): PartialFun = {
                                     _case match {
                                         case GuardedResult(guard, expr) => {
-                                            createPartialFun(lhs, Some(guard), expr).asInstanceOf[PartialFun]
+                                            createPartialFun(lhs, Some(guard), expr)
                                         }
                                     }
                                 }
@@ -114,6 +114,115 @@ object Evaluator {
         defs.foldLeft(x)(f)
     }
 
+    def withMultilineDefinition(env: Environment, name: String, defs: List[Definition]): Either[Error, Environment] = {
+        // Check if we're just defining a regular value, or a function
+        defs(0) match {
+            case Equation(Id(name), _) => {
+                // i.e. something like `x = 1` (rather than e.g. `f x = 1`)
+                if (defs.length == 1) {
+                    return withDefinition(env, defs(0))
+                } else {
+                    return Left(ModuleLoadError(s"multiple definitions for ${name}"))
+                }
+            }
+            case _ => {}
+        }
+
+        // If we've got here, then we have a function definition
+        def toAlts(env: Environment, defn: Definition): Seq[(Environment, PartialFun)] = {
+            defn match {
+                case Equation(lhs, rhs) => List((env, createPartialFun(lhs, None, rhs)))
+                case WhereEquation(lhs, rhs, defs) => {
+                    val extendedEnvironment = withDefinitions(env, defs)
+                    extendedEnvironment match {
+                        case Right(newEnv) => List((newEnv, createPartialFun(lhs, None, rhs)))
+                        case x => List() // TODO: fix
+                    }
+                }
+                case GuardedEquation(lhs, cases, defs) => {
+                    val exprs = flattenApply(lhs)
+                    def f(_case: GuardedResult): PartialFun = {
+                        _case match {
+                            case GuardedResult(guard, expr) => {
+                                createPartialFun(lhs, Some(guard), expr)
+                            }
+                        }
+                    }
+                    val partialFuns = cases.map(f)
+                    List.fill(partialFuns.length)(env).zip(partialFuns)
+                }
+            }
+        }
+        lazy val newEnv: Environment = {
+            lazy val alts: Seq[(Environment, PartialFun)] = defs.flatMap(defn => toAlts(newEnv, defn))
+            lazy val function = FunctionWithClosures(alts)
+            lazy val value = evaluate(newEnv, function)
+            env.registerFunction(name)
+            env.lazyDefine(name, LazyValue(() => value))
+        }
+        Right(newEnv)
+    }
+
+    def parseAllDefinitions(env: Environment, defs: List[Definition]): Either[Error, Environment] = {
+        def getNameFromLhsExpr(lhs: Expr): String = {
+            lhs match {
+                case Apply(l, r) => getNameFromLhsExpr(l)
+                case Id(name) => name
+            }
+        }
+
+        val defsByName: collection.mutable.Map[String, List[Definition]] = collection.mutable.Map()
+
+        var currentName = ""
+        var currentDefs: List[Definition] = List()
+
+        var duplicatedName: Option[String] = None
+
+        def f(defn: Definition, lhs: Expr): Unit = {
+            val name = getNameFromLhsExpr(lhs)
+            if (name == currentName) {
+                currentDefs = defn :: currentDefs
+            } else {
+                if (currentDefs.length > 0) defsByName(currentName) = currentDefs
+                currentDefs = List(defn)
+                if (defsByName.isDefinedAt(name) && !duplicatedName.isDefined) {
+                    duplicatedName = Some(name)
+                }
+                currentName = name
+            }
+        }
+
+        defs.foreach(defn => {
+            defn match {
+                case Equation(lhs, _) => f(defn, lhs)
+                case GuardedEquation(pattern, _, _) => f(defn, pattern)
+                case WhereEquation(lhs, _, _) => f(defn, lhs)
+                case _ => {}
+            }
+        })
+
+        if (currentDefs.length > 0) defsByName(currentName) = currentDefs
+
+        if (duplicatedName.isDefined) {
+            Left(ModuleHasDuplicatedDefinitionsError(duplicatedName.get))
+        } else {
+            def f(acc: Either[Error, Environment], curr: (String, List[Definition])): Either[Error, Environment] = {
+                acc match {
+                    case Right(env) => {
+                        curr match {
+                            case (name, defs) => {
+                                withMultilineDefinition(env, name, defs)
+                            }
+                        }
+                    }
+                    case _ => acc
+                }
+            }
+            val x: Either[Error, Environment] = Right(env)
+            defsByName.keys.map(key => (key, defsByName(key))).foldLeft(x)(f)
+        }
+    }
+
     def getLeftmostArgument(e: Expr): Expr = {
         e match {
             case Apply(l @ Apply(_, _), r) => getLeftmostArgument(l)
@@ -128,7 +237,7 @@ object Evaluator {
         }
     }
 
-    def createPartialFun(lhs: Expr, guard: Option[Expr], rhs: Expr): Expr = {        
+    def createPartialFun(lhs: Expr, guard: Option[Expr], rhs: Expr): PartialFun = {
         val editedLhs = removeLeftmostArgument(lhs)
         PartialFun(editedLhs, guard, rhs)
     }
