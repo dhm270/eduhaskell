@@ -298,10 +298,11 @@ simpleExpression: Expr = ID { Id($ID) }
                          | '[' maybeEOL expression maybeEOL '|' maybeEOL qualifiers maybeEOL ']' { SequenceComprehension($expression, $qualifiers) }
                          | error => ()
 
-qualifiers: List[(Expr, Expr)] = qualifier { List($qualifier) }
-                                 | qualifier maybeEOL ',' maybeEOL qualifiers { $qualifier :: $qualifiers }
+qualifiers: List[SequenceComprehensionQualifier] = qualifier { List($qualifier) }
+                                                   | qualifier maybeEOL ',' maybeEOL qualifiers { $qualifier :: $qualifiers }
 
-qualifier: (Expr, Expr) = pattern:pattern '<-' expression { ($pattern, $expression) }
+qualifier: SequenceComprehensionQualifier = pattern:pattern '<-' expression { SequenceComprehensionGenerator($pattern, $expression) }
+                                          | `let` equation { SequenceComprehensionDefinition($equation) }
 
 guardedEquation: GuardedEquation = pattern:pattern '|' rhss:RHSs where:whereClause { GuardedEquation($pattern, $rhss, $where) }
 

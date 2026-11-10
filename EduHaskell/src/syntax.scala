@@ -55,8 +55,18 @@ object syntax {
         lazy val source = ".."
     }
 
-    case class SequenceComprehension(expr: Expr, qualifiers: Seq[(Expr, Expr)]) extends Expr {
-        lazy val source = s"[${expr.source} | ${qualifiers.map({ case (a, b) => a.source + " <- " + b.source }).mkString(", ")}]"
+    case class SequenceComprehension(expr: Expr, qualifiers: Seq[SequenceComprehensionQualifier]) extends Expr {
+        lazy val source = s"[${expr.source} | ${qualifiers.map(_.source).mkString(", ")}]"
+    }
+
+    trait SequenceComprehensionQualifier {
+        val source: String
+    }
+    case class SequenceComprehensionGenerator(pattern: Expr, expr: Expr) extends SequenceComprehensionQualifier {
+        lazy val source = s"${pattern.source} <- ${expr.source}"
+    }
+    case class SequenceComprehensionDefinition(defn: Definition) extends SequenceComprehensionQualifier {
+        lazy val source = s"let ${defn.source}"
     }
 
     case class Binop(op: String, l: Expr, r: Expr) extends Expr {

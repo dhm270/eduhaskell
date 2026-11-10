@@ -193,7 +193,8 @@ object Visitors {
       SequenceComprehension(
         Detuple(expr),
         qualifiers.map({
-          case (a, b) => (Detuple(a), Detuple(b))
+          case SequenceComprehensionGenerator(a, b) => SequenceComprehensionGenerator(Detuple(a), Detuple(b))
+          case x: SequenceComprehensionDefinition => x
         })
       )
     }
