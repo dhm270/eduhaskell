@@ -26,7 +26,13 @@ object Evaluator {
                                         case GuardedResult(guard, expr) => {
                                             val result = evaluate(env, guard)
                                             result match {
-                                                case Right(BooleanValue(true)) => Right(withEquationDefinition(env, lhs, expr))
+                                                case Right(BooleanValue(true)) => {
+                                                    val extendedEnvironment = withDefinitions(env, defs)
+                                                    extendedEnvironment match {
+                                                        case Right(env) => Right(withEquationDefinition(env, lhs, expr))
+                                                        case x => x
+                                                    }
+                                                }
                                                 case Right(BooleanValue(false)) => acc
                                                 case Right(_) => Left(PatternMatchError())
                                                 case Left(_) => result.asInstanceOf[Either[Error, Environment]]
@@ -148,8 +154,14 @@ object Evaluator {
                             }
                         }
                     }
-                    val partialFuns = cases.map(f)
-                    List.fill(partialFuns.length)(env).zip(partialFuns)
+                    val extendedEnvironment = withDefinitions(env, defs)
+                    extendedEnvironment match {
+                        case Right(env) => {
+                            val partialFuns = cases.map(f)
+                            List.fill(partialFuns.length)(env).zip(partialFuns)
+                        }
+                        case x => List() // TODO: fix
+                    }
                 }
             }
         }
