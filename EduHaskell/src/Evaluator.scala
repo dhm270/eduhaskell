@@ -5,20 +5,25 @@ import eduhaskell.errors._
 import eduhaskell.Environment
 
 object Evaluator {
-    def withDefinition(env: Environment, defn: Definition): Either[Error, Environment] = {
+    def withDefinition(env: Environment, defn: Definition): Either[Error, (Environment, Seq[String])] = {
         defn match {
             case Equation(lhs, rhs) => Right(withEquationDefinition(env, lhs, rhs))
             case WhereEquation(lhs, rhs, defs) => {
                 val extendedEnvironment = withDefinitions(env, defs)
                 extendedEnvironment match {
-                    case Right(newEnv) => Right(withEquationDefinition(newEnv, lhs, rhs))
+                    case Right((newEnv, names)) => {
+                        val result = withEquationDefinition(newEnv, lhs, rhs)
+                        result match {
+                            case (newEnv1, names1) => Right((newEnv1, names ++ names1))
+                        }
+                    }
                     case x => x
                 }
             }
             case GuardedEquation(lhs, cases, defs) => {
                 lhs match {
                     case Id(name) => {
-                        def f(acc: Either[Error, Environment], curr: GuardedResult): Either[Error, Environment] = {
+                        def f(acc: Either[Error, (Environment, Seq[String])], curr: GuardedResult): Either[Error, (Environment, Seq[String])] = {
                             acc match {
                                 case Right(_) => acc
                                 case Left(PatternMatchError()) => {
@@ -29,13 +34,18 @@ object Evaluator {
                                                 case Right(BooleanValue(true)) => {
                                                     val extendedEnvironment = withDefinitions(env, defs)
                                                     extendedEnvironment match {
-                                                        case Right(env) => Right(withEquationDefinition(env, lhs, expr))
+                                                        case Right((env, names)) => {
+                                                            val result = withEquationDefinition(env, lhs, expr)
+                                                            result match {
+                                                                case (env1, names1) => Right((env1, names ++ names1))
+                                                            }
+                                                        }
                                                         case x => x
                                                     }
                                                 }
                                                 case Right(BooleanValue(false)) => acc
                                                 case Right(_) => Left(PatternMatchError())
-                                                case Left(_) => result.asInstanceOf[Either[Error, Environment]]
+                                                case Left(_) => result.asInstanceOf[Either[Error, (Environment, Seq[String])]]
                                             }
                                         }
                                     }
@@ -43,7 +53,7 @@ object Evaluator {
                                 case Left(_) => acc
                             }
                         }
-                        val x: Either[Error, Environment] = Left(PatternMatchError())
+                        val x: Either[Error, (Environment, Seq[String])] = Left(PatternMatchError())
                         cases.foldLeft(x)(f)
                     }
                     case Apply(l, r) => {
@@ -69,7 +79,7 @@ object Evaluator {
                                     env.registerFunction(funcName)
                                     env.lazyDefine(funcName, LazyValue(() => value))
                                 }
-                                Right(newEnv)
+                                Right((newEnv, List(funcName)))
                             }
                         }
                     }
@@ -78,14 +88,14 @@ object Evaluator {
         }
     }
 
-    def withEquationDefinition(env: Environment, lhs: Expr, rhs: Expr): Environment = {
+    def withEquationDefinition(env: Environment, lhs: Expr, rhs: Expr): (Environment, Seq[String]) = {
         lhs match {
             case Id(name) => {
                 lazy val newEnv: Environment = {
                     lazy val value = evaluate(newEnv, rhs)
                     env.lazyDefine(name, LazyValue(() => value))
                 }
-                newEnv
+                (newEnv, List(name))
             }
             case Apply(l, r) => {
                 val exprs = flattenApply(lhs)
@@ -102,25 +112,31 @@ object Evaluator {
                             env.registerFunction(funcName)
                             env.lazyDefine(funcName, LazyValue(() => value))
                         }
-                        newEnv
+                        (newEnv, List(funcName))
                     }
                 }
             }
         }
     }
 
-    def withDefinitions(env: Environment, defs: Seq[Definition]): Either[Error, Environment] = {
-        def f(acc: Either[Error, Environment], curr: Definition): Either[Error, Environment] = {
+    def withDefinitions(env: Environment, defs: Seq[Definition]): Either[Error, (Environment, Seq[String])] = {
+        def f(acc: Either[Error, (Environment, Seq[String])], curr: Definition): Either[Error, (Environment, Seq[String])] = {
             acc match {
-                case Right(env) => withDefinition(env, curr)
+                case Right((env, names)) => {
+                    val result = withDefinition(env, curr)
+                    result match {
+                        case Right((env1, names1)) => Right((env1, names ++ names1))
+                        case x => x
+                    }
+                }
                 case _ => acc
             }
         }
-        val x: Either[Error, Environment] = Right(env)
+        val x: Either[Error, (Environment, Seq[String])] = Right((env, List()))
         defs.foldLeft(x)(f)
     }
 
-    def withMultilineDefinition(env: Environment, name: String, defs: List[Definition]): Either[Error, Environment] = {
+    def withMultilineDefinition(env: Environment, name: String, defs: List[Definition]): Either[Error, (Environment, Seq[String])] = {
         // Check if we're just defining a regular value, or a function
         defs(0) match {
             case Equation(Id(name), _) => {
@@ -135,13 +151,13 @@ object Evaluator {
         }
 
         // If we've got here, then we have a function definition
-        def toAlts(env: Environment, defn: Definition): Seq[(Environment, PartialFun)] = {
+        def toAlts(env: Environment, defn: Definition): Seq[(Environment, Seq[String], PartialFun)] = {
             defn match {
-                case Equation(lhs, rhs) => List((env, createPartialFun(lhs, None, rhs)))
+                case Equation(lhs, rhs) => List((env, List(), createPartialFun(lhs, None, rhs)))
                 case WhereEquation(lhs, rhs, defs) => {
                     val extendedEnvironment = withDefinitions(env, defs)
                     extendedEnvironment match {
-                        case Right(newEnv) => List((newEnv, createPartialFun(lhs, None, rhs)))
+                        case Right((newEnv, names)) => List((newEnv, names, createPartialFun(lhs, None, rhs)))
                         case x => List() // TODO: fix
                     }
                 }
@@ -156,9 +172,9 @@ object Evaluator {
                     }
                     val extendedEnvironment = withDefinitions(env, defs)
                     extendedEnvironment match {
-                        case Right(env) => {
+                        case Right((env, names)) => {
                             val partialFuns = cases.map(f)
-                            List.fill(partialFuns.length)(env).zip(partialFuns)
+                            partialFuns.map(p => (env, names, p))
                         }
                         case x => List() // TODO: fix
                     }
@@ -166,16 +182,16 @@ object Evaluator {
             }
         }
         lazy val newEnv: Environment = {
-            lazy val alts: Seq[(Environment, PartialFun)] = defs.flatMap(defn => toAlts(newEnv, defn))
+            lazy val alts: Seq[(Environment, Seq[String], PartialFun)] = defs.flatMap(defn => toAlts(newEnv, defn))
             lazy val function = FunctionWithClosures(alts)
             lazy val value = evaluate(newEnv, function)
             env.registerFunction(name)
             env.lazyDefine(name, LazyValue(() => value))
         }
-        Right(newEnv)
+        Right((newEnv, List(name)))
     }
 
-    def parseAllDefinitions(env: Environment, defs: List[Definition]): Either[Error, Environment] = {
+    def parseAllDefinitions(env: Environment, defs: List[Definition]): Either[Error, (Environment, Seq[String])] = {
         def getNameFromLhsExpr(lhs: Expr): String = {
             lhs match {
                 case Apply(l, r) => getNameFromLhsExpr(l)
@@ -218,19 +234,23 @@ object Evaluator {
         if (duplicatedName.isDefined) {
             Left(ModuleHasDuplicatedDefinitionsError(duplicatedName.get))
         } else {
-            def f(acc: Either[Error, Environment], curr: (String, List[Definition])): Either[Error, Environment] = {
+            def f(acc: Either[Error, (Environment, Seq[String])], curr: (String, List[Definition])): Either[Error, (Environment, Seq[String])] = {
                 acc match {
-                    case Right(env) => {
+                    case Right((env, names)) => {
                         curr match {
                             case (name, defs) => {
-                                withMultilineDefinition(env, name, defs)
+                                val result = withMultilineDefinition(env, name, defs)
+                                result match {
+                                    case Right((env1, names1)) => Right(env1, names ++ names1)
+                                    case x => x
+                                }
                             }
                         }
                     }
                     case _ => acc
                 }
             }
-            val x: Either[Error, Environment] = Right(env)
+            val x: Either[Error, (Environment, Seq[String])] = Right((env, List()))
             defsByName.keys.map(key => (key, defsByName(key))).foldLeft(x)(f)
         }
     }
@@ -263,10 +283,11 @@ object Evaluator {
         }
     }
 
-    def matchAndExtendEnvironment(env: Environment, pattern: Expr, comparison: LazyValue): Option[Environment] = {
-        // If we're able to successfully pattern match, then we return Some(newEnv),
-        // where newEnv is the potentially extended environment, containing any
-        // necessary new identifier definitions.
+    def matchAndExtendEnvironment(env: Environment, conflictingNames: Seq[String], pattern: Expr, comparison: LazyValue): Either[Error, (Environment, Seq[String])] = {
+        // If we're able to successfully pattern match, then we return Right((newEnv, names)),
+        // where newEnv is the potentially extended environment (containing any
+        // necessary new identifier definitions), and names is a list of the new names
+        // we have just defined (so we can keep track of them, for conflictingNames).
         var pat = pattern
         pat match {
             case Tuple(exprs) => {
@@ -278,7 +299,11 @@ object Evaluator {
         }
         pat match {
             case Id(name) => {
-                Some(env.lazyDefine(name, comparison))
+                if (conflictingNames.contains(name)) {
+                    Left(ConflictingDefinitionsError(List(name)))
+                } else {
+                    Right((env.lazyDefine(name, comparison), List(name)))
+                }
             }
 
             case Num(value) => {
@@ -286,12 +311,12 @@ object Evaluator {
                 got match {
                     case Right(IntValue(int)) => {
                         if (int == value) {
-                            Some(env)
+                            Right((env, List()))
                         } else {
-                            None
+                            Left(PatternMatchError())
                         }
                     }
-                    case _ => None
+                    case _ => Left(PatternMatchError())
                 }
             }
 
@@ -300,12 +325,12 @@ object Evaluator {
                 got match {
                     case Right(RealValue(real)) => {
                         if (real == value) {
-                            Some(env)
+                            Right((env, List()))
                         } else {
-                            None
+                            Left(PatternMatchError())
                         }
                     }
-                    case _ => None
+                    case _ => Left(PatternMatchError())
                 }
             }
 
@@ -314,9 +339,9 @@ object Evaluator {
                 got match {
                     case Right(CharValue(c)) => {
                         if (value.opening == "'" && value.body == c.toString) {
-                            Some(env)
+                            Right((env, List()))
                         } else {
-                            None
+                            Left(PatternMatchError())
                         }
                     }
                     case Right(c @ ConsValue(_, _)) => {
@@ -342,15 +367,15 @@ object Evaluator {
                         }
                         if (valid) {
                             if (value.body == str) {
-                                Some(env)
+                                Right((env, List()))
                             } else {
-                                None
+                                Left(PatternMatchError())
                             }
                         } else {
-                            None
+                            Left(PatternMatchError())
                         }
                     }
-                    case _ => None
+                    case _ => Left(PatternMatchError())
                 }
             }
 
@@ -359,25 +384,32 @@ object Evaluator {
                 got match {
                     case Right(TupleValue(lazyVals)) => {
                         if (patternExprs.length == lazyVals.length) {
-                            def f(acc: Option[Environment], curr: (Expr, LazyValue)): Option[Environment] = {
+                            def f(acc: Either[Error, (Environment, Seq[String])], curr: (Expr, LazyValue)): Either[Error, (Environment, Seq[String])] = {
                                 curr match {
                                     case (e, l) => {
-                                        if (acc.isDefined) {
-                                            matchAndExtendEnvironment(acc.get, e, l)
-                                        } else {
-                                            None
+                                        acc match {
+                                            case Right((env, names)) => {
+                                                val result = matchAndExtendEnvironment(env, conflictingNames ++ names, e, l)
+                                                result match {
+                                                    case Right((env1, names1)) => {
+                                                        Right((env1, names ++ names1))
+                                                    }
+                                                    case x => x
+                                                }
+                                            }
+                                            case x => x
                                         }
                                     }
-                                    case _ => None
+                                    case _ => Left(PatternMatchError())
                                 }
                             }
-                            val x: Option[Environment] = Some(env)
+                            val x: Either[Error, (Environment, Seq[String])] = Right((env, List()))
                             patternExprs.zip(lazyVals).foldLeft(x)(f)
                         } else {
-                            None
+                            Left(PatternMatchError())
                         }
                     }
-                    case _ => None
+                    case _ => Left(PatternMatchError())
                 }
             }
 
@@ -385,11 +417,11 @@ object Evaluator {
                 val got = comparison.get()
                 if (patternExprs.length == 0) {
                     got match {
-                        case Right(NilValue()) => Some(env)
-                        case _ => None
+                        case Right(NilValue()) => Right((env, List()))
+                        case _ => Left(PatternMatchError())
                     }
                 } else {
-                    matchAndExtendEnvironment(env, Binop(":", patternExprs(0), Sequence(patternExprs.drop(1))), comparison)
+                    matchAndExtendEnvironment(env, conflictingNames, Binop(":", patternExprs(0), Sequence(patternExprs.drop(1))), comparison)
                 }
             }
 
@@ -397,29 +429,36 @@ object Evaluator {
                 val got = comparison.get()
                 got match {
                     case Right(ConsValue(head, tail)) => {
-                        val envAfterHead = matchAndExtendEnvironment(env, l, head)
-                        if (envAfterHead.isDefined) {
-                            matchAndExtendEnvironment(envAfterHead.get, r, tail)
-                        } else {
-                            None
+                        val resultAfterHead = matchAndExtendEnvironment(env, conflictingNames, l, head)
+                        resultAfterHead match {
+                            case Right((envAfterHead, namesAfterHead)) => {
+                                val resultAfterTail = matchAndExtendEnvironment(envAfterHead, conflictingNames ++ namesAfterHead, r, tail)
+                                resultAfterTail match {
+                                    case Right((env, namesAfterTail)) => Right((env, namesAfterHead ++ namesAfterTail))
+                                    case x => x
+                                }
+                            }
+                            case x => x
                         }
                     }
-                    case _ => None
+                    case _ => Left(PatternMatchError())
                 }
             }
 
-            case Bra(e) => matchAndExtendEnvironment(env, e, comparison)
+            case Bra(e) => matchAndExtendEnvironment(env, conflictingNames, e, comparison)
 
-            case _ => None
+            case _ => Left(PatternMatchError())
         }
     }
 
-    def patternMatch(env: Environment, pattern: Expr, guard: Option[Expr], comparison: LazyValue, expr: Expr): Either[Error, Value] = {
-        val (_, result) = patternMatchAndReturnEnvironment(env, pattern, guard, comparison, expr)
+    def patternMatch(env: Environment, conflictingNames: Seq[String], pattern: Expr, guard: Option[Expr], comparison: LazyValue, expr: Expr): Either[Error, Value] = {
+        val (_, _, result) = patternMatchAndReturnEnvironment(env, conflictingNames, pattern, guard, comparison, expr)
         result
     }
 
-    def patternMatchAndReturnEnvironment(env: Environment, pattern: Expr, guard: Option[Expr], comparison: LazyValue, expr: Expr): (Environment, Either[Error, Value]) = {
+    def patternMatchAndReturnEnvironment(env: Environment, conflictingNames: Seq[String], pattern: Expr, guard: Option[Expr], comparison: LazyValue, expr: Expr): (Environment, Seq[String], Either[Error, Value]) = {
+        // Second argument in the result is the new names which we bound while doing this pattern match.
+
         // If the pattern is multiple things, then we convert it.
         // Instead, we want to think of this as a function that takes only
         // a single parameter and, if it is defined to have "multiple parameters",
@@ -436,24 +475,30 @@ object Evaluator {
             case _ => {}
         }
         
-        val maybeNewEnv: Option[Environment] = matchAndExtendEnvironment(env, pat, comparison)
-        if (maybeNewEnv.isDefined) {
-            val newEnv = maybeNewEnv.get
-            var guardMet = true
-            if (guard.isDefined) {
-                val guardResult = evaluate(newEnv, guard.get)
-                guardResult match {
-                    case Right(BooleanValue(true)) => guardMet = true
-                    case _ => guardMet = false
+        val matchResult: Either[Error, (Environment, Seq[String])] = matchAndExtendEnvironment(env, conflictingNames, pat, comparison)
+        matchResult match {
+            case Right((newEnv, newNames)) => {
+                var guardMet = true
+                if (guard.isDefined) {
+                    val guardResult = evaluate(newEnv, guard.get)
+                    guardResult match {
+                        case Right(BooleanValue(true)) => guardMet = true
+                        case _ => guardMet = false
+                    }
+                }
+                if (guardMet) {
+                    e match {
+                        case p: PartialFun => e = FunctionWithClosures(List((newEnv, conflictingNames ++ newNames, p)))
+                        case _ => {}
+                    }
+                    (newEnv, newNames, evaluate(newEnv, e))
+                } else {
+                    (env, List(), Left(PatternMatchError()))
                 }
             }
-            if (guardMet) {
-                (maybeNewEnv.get, evaluate(newEnv, e))
-            } else {
-                (env, Left(PatternMatchError()))
+            case x => {
+                (env, List(), x.asInstanceOf[Either[Error, Value]])
             }
-        } else {
-            (env, Left(PatternMatchError()))
         }
     }
 
@@ -492,14 +537,14 @@ object Evaluator {
             case Where(e, defs) => {
                 val extendedEnvironment = withDefinitions(env, defs)
                 extendedEnvironment match {
-                    case Right(newEnv) => evaluate(newEnv, e)
+                    case Right((newEnv, names)) => evaluate(newEnv, e)
                     case x => x.asInstanceOf[Either[Error, Value]]
                 }
             }
 
             case PartialFun(pattern, guard, expr) => {
                 def func(lazyValue: LazyValue): Either[Error, Value] = {
-                    patternMatch(env, pattern, guard, lazyValue, expr)
+                    patternMatch(env, List(), pattern, guard, lazyValue, expr)
                 }
                 Right(FunctionValue(func))
             }
@@ -990,47 +1035,48 @@ object Evaluator {
     }
 
     def evaluateFunction(env: Environment, alts: Seq[PartialFun]): Either[Error, Value] = {
-        evaluateFunctionWithClosures(List.fill(alts.length)(env).zip(alts))
+        val modifiedAlts = alts.map(alt => (env, List(), alt))
+        evaluateFunctionWithClosures(modifiedAlts)
     }
 
-    def evaluateFunctionWithClosures(alts: Seq[(Environment, PartialFun)]): Either[Error, Value] = {
+    def evaluateFunctionWithClosures(alts: Seq[(Environment, Seq[String], PartialFun)]): Either[Error, Value] = {
         if (alts.length == 0) return Left(PatternMatchError())
         def func(lazyValue: LazyValue): Either[Error, Value] = {
             alts(0) match {
-                case (env, PartialFun(Apply(_, _), _, _)) => {
+                case (env, _, PartialFun(Apply(_, _), _, _)) => {
                     // i.e. there is another argument after this one, so we will certainly
                     // return another function rather than an actual value
-                    def f(acc: Seq[(Environment, PartialFun)], curr: (Environment, PartialFun)): Seq[(Environment, PartialFun)] = {
+                    def f(acc: Seq[(Environment, Seq[String], PartialFun)], curr: (Environment, Seq[String], PartialFun)): Seq[(Environment, Seq[String], PartialFun)] = {
                         // Find all possible pattern matches
                         curr match {
-                            case (env, PartialFun(pattern, guard, expr)) => {
-                                val (newEnv, result) = patternMatchAndReturnEnvironment(env, pattern, guard, lazyValue, expr)
+                            case (env, names, PartialFun(pattern, guard, expr)) => {
+                                val (newEnv, newNames, result) = patternMatchAndReturnEnvironment(env, names, pattern, guard, lazyValue, expr)
                                 result match {
                                     case Left(PatternMatchError()) => acc
                                     case _ => {
                                         // Remove the first argument from the partial function, since we've already evaluated it
                                         val editedPartialFun = createPartialFun(pattern, guard, expr)
-                                        acc ++ List((newEnv, editedPartialFun.asInstanceOf[PartialFun]))
+                                        acc ++ List((newEnv, names ++ newNames, editedPartialFun.asInstanceOf[PartialFun]))
                                     }
                                 }
                             }
                         }
                     }
-                    val x: Seq[(Environment, PartialFun)] = List()
+                    val x: Seq[(Environment, Seq[String], PartialFun)] = List()
                     val matches = alts.foldLeft(x)(f)
                     // In the line below, `env` is a dummy value.
                     // The actual clause in `evaluate` doesn't use it.
                     evaluate(env, FunctionWithClosures(matches))
                 }
-                case (_, _) => {
+                case (_, _, _) => {
                     // this is the last argument, so we will return a non-function
-                    def f(acc: Either[Error, Value], curr: (Environment, PartialFun)): Either[Error, Value] = {
+                    def f(acc: Either[Error, Value], curr: (Environment, Seq[String], PartialFun)): Either[Error, Value] = {
                         acc match {
                             case Right(_) => acc // we have already successfully pattern matched
                             case Left(PatternMatchError()) => {
                                 // i.e. we haven't successfully matched yet, so we keep going
                                 curr match {
-                                    case (env, PartialFun(pattern, guard, expr)) => patternMatch(env, pattern, guard, lazyValue, expr)
+                                    case (env, names, PartialFun(pattern, guard, expr)) => patternMatch(env, names, pattern, guard, lazyValue, expr)
                                 }
                             }
                             case Left(_) => acc

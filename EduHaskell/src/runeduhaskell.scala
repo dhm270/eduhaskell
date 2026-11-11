@@ -46,7 +46,7 @@ object RunEduHaskell {
             if (fileName != "") {
                 val loadFileResult = loadFile(fileName)
                 loadFileResult match {
-                    case Right(env) => replEnv = env
+                    case Right((env, names)) => replEnv = env
                     case Left(e) => {
                         shouldStartRepl = false
                         println("Error while loading file:")
@@ -94,7 +94,7 @@ object RunEduHaskell {
         clause
     }
 
-    def loadFile(path: String): Either[Error, Environment] = {
+    def loadFile(path: String): Either[Error, (Environment, Seq[String])] = {
         var state: ParseState = RUNNING
         val input = SourceTextCursor(Path.of(path))
         val scanner = makeScanner(input)
@@ -169,7 +169,7 @@ object RunEduHaskell {
                     } else if (instruction.isInstanceOf[Definition]) {
                         val extendedEnvironment = Evaluator.withDefinition(replEnv, instruction.asInstanceOf[Definition])
                         extendedEnvironment match {
-                            case Right(newEnv) => replEnv = newEnv
+                            case Right((newEnv, names)) => replEnv = newEnv
                             case Left(e) => {
                                 print("! ")
                                 println(e.message)

@@ -23,6 +23,10 @@ object errors {
         val message = "pattern matching failed"
     }
 
+    case class ConflictingDefinitionsError(identifiers: Seq[String]) extends RuntimeError {
+        val message = s"conflicting definitions for ${identifiers.mkString(", ")}"
+    }
+
     case class SyntaxError(message: String) extends Error {}
 
     case class TypeError(message: String) extends Error {}
