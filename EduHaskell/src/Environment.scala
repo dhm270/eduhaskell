@@ -69,40 +69,60 @@ case class LazyValue(private var getter: () => Either[Error, Value]) {
 
 object LazyValue {
     def lazyPrint(v: Value): Unit = {
-        v match {
-            case ConsValue(h, t) => {
-                this.lazyPrint(h)
-                print(" : ")
-                this.lazyPrint(t)
+        this.lazyPrint(LazyValue(() => Right(v)))
+    }
+
+    def lazyPrint(lv: LazyValue): Unit = {
+        lv.get() match {
+            case Left(e) => {
+                print(s"*** Error: ${e.message}")
             }
-            case v: Value => {
-                print(v)
+            case Right(v) => {
+                v match {
+                    case ConsValue(_, _) => {
+                        this.lazyPrintFullList(lv)
+                    }
+                    case NilValue() => print("[]")
+                    case TupleValue(vals) => {
+                        print("(")
+                        for (i <- vals.indices) {
+                            this.lazyPrint(vals(i))
+                            if (i != vals.length - 1) print(", ")
+                        }
+                        print(")")
+                    }
+                    case v: Value => print(v)
+                }
             }
         }
     }
 
-    def lazyPrint(lv: LazyValue): Unit = {
-        var curr = lv
+    def lazyPrintFullList(list: LazyValue): Unit = {
+        print("[")
         var printing = true
+        var curr = list
+        var isFirstItem = true
         while (printing) {
-            val got = curr.get()
-            got match {
-                case Left(e) => {
-                    print(s"*** Error: ${e.message}")
+            curr.get() match {
+                case Right(ConsValue(h, t)) => {
+                    if (!isFirstItem) print(", ")
+                    isFirstItem = false
+                    this.lazyPrint(h)
+                    curr = t
+                }
+                case Right(NilValue()) => {
+                    print("]")
                     printing = false
                 }
-                case Right(v) => {
-                    v match {
-                        case ConsValue(h, t) => {
-                            this.lazyPrint(h)
-                            print(" : ")
-                            curr = t
-                        }
-                        case v: Value => {
-                            print(v)
-                            printing = false
-                        }
-                    }
+                case Right(x) => {
+                    // This shouldn't be possible once type checking is implemented properly.
+                    // TODO: remove.
+                    print(x)
+                    printing = false
+                }
+                case Left(e) => {
+                    print(s", *** Error: ${e.message}")
+                    printing = false
                 }
             }
         }
