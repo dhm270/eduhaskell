@@ -1,5 +1,8 @@
 package eduhaskell
 
+import eduhaskell.syntax._
+import eduhaskell.errors._
+
 trait Type {
     val source: String
 }
@@ -33,6 +36,39 @@ case class FunctionType(argument: Type, output: Type) extends Type {
 }
 
 object TypeChecker {
+    def getFirstError(types: Seq[Either[Error, Type]]): Either[Error, Type] = {
+        def f(acc: Either[Error, Type], curr: Either[Error, Type]): Either[Error, Type] = {
+            acc match {
+                case Left(_) => acc
+                case Right(_) => {
+                    curr match {
+                        case Left(_) => curr
+                        case Right(_) => acc
+                    }
+                }
+            }
+        }
+        val x: Either[Error, Type] = Right(BooleanType())
+        types.foldLeft(x)(f)
+    }
+
+    def ifNoTypeErrors(unextractedTypes: Seq[Either[Error, Type]], callback: Seq[Type] => Either[Error, Type]): Either[Error, Type] = {
+        val firstTypeError = getFirstError(unextractedTypes)
+        firstTypeError match {
+            case Right(_) => {
+                // i.e. no type errors were found
+                def extract(x: Either[Error, Type]): Type = {
+                    x match {
+                        case Right(_type) => _type
+                    }
+                }
+                val extractedTypes = unextractedTypes.map(extract)
+                callback(extractedTypes)
+            }
+            case Left(_) => firstTypeError
+        }
+    }
+
     def getType(env: Environment, e: Expr): Either[Error, Type] = {
         e match {
             case Op(name) => Left(NotImplemented())
@@ -52,36 +88,49 @@ object TypeChecker {
                     getType(env, exprs(0))
                 } else {
                     val subtypes = exprs.map(expr => getType(env, expr))
-                    Right(TupleType(subtypes))
+                    ifNoTypeErrors(subtypes, subtypesExtracted => Right(TupleType(subtypesExtracted)))
                 }
             }
             case Sequence(exprs) => {
                 val subtypes = exprs.map(expr => getType(env, expr))
-                // TODO: improve
-                if (subtypes.length == 1) {
-                    Right(SequenceType(subtypes(0)))
-                } else {
-                    val comparisonType = subtypes(0)
-                    val otherTypes = subtypes.drop(1)
-                    val allEqual = otherTypes.forall(_ == comparisonType)
-                    if (allEqual) {
-                        Right(SequenceType(comparisonType))
+                ifNoTypeErrors(subtypes, subtypesExtracted => {
+                    if (subtypesExtracted.length == 1) {
+                        Right(SequenceType(subtypesExtracted(0)))
                     } else {
-                        Left(TypeError("elements of a sequence must all be of the same type"))
+                        val comparisonType = subtypesExtracted(0)
+                        val otherTypes = subtypesExtracted.drop(1)
+                        val allEqual = otherTypes.forall(_ == comparisonType)
+                        if (allEqual) {
+                            Right(SequenceType(comparisonType))
+                        } else {
+                            Left(TypeError("elements of a sequence must all be of the same type"))
+                        }
                     }
-                }
+                })
             }
             case ArithmeticSequence(start, next, end) => {
                 val startType = getType(env, start)
+                startType match {
+                    case Left(_) => return startType
+                    case Right(_) => {}
+                }
                 if (next.isDefined) {
-                    val nextType = getType(env, next)
+                    val nextType = getType(env, next.get)
+                    nextType match {
+                        case Left(_) => return nextType
+                        case Right(_) => {}
+                    }
                     if (nextType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
                 }
                 if (end.isDefined) {
-                    val endType = getType(env, end)
+                    val endType = getType(env, end.get)
+                    endType match {
+                        case Left(_) => return endType
+                        case Right(_) => {}
+                    }
                     if (endType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
                 }
-                Right(startType)
+                startType
             }
             case SequenceComprehension(expr, qualifiers) => Left(NotImplemented())
 
@@ -90,14 +139,22 @@ object TypeChecker {
             case Apply(l, r) => getTypeOfApply(env, l, r)
             case If(condition, trueExpr, falseExpr) => {
                 val conditionType = getType(env, condition)
-                if (conditionType != BooleanType()) return Left(TypeError(s"condition of an if-statement must be of type ${BooleanType().source}"))
-
-                val trueType = getType(env, trueExpr)
-                val falseType = getType(env, falseExpr)
-                if (trueType == falseType) {
-                    Right(trueType)
-                } else {
-                    Left(TypeError("both arms of an if-statement must be of the same type"))
+                conditionType match {
+                    case Right(BooleanType()) => {
+                        val trueType = getType(env, trueExpr)
+                        val falseType = getType(env, falseExpr)
+                        ifNoTypeErrors(List(trueType, falseType), extractedTypes => {
+                            if (extractedTypes(0) == extractedTypes(1)) {
+                                Right(extractedTypes(0))
+                            } else {
+                                Left(TypeError("both arms of an if-statement must be of the same type"))
+                            }
+                        })
+                    }
+                    case Right(_) => {
+                        Left(TypeError(s"condition of an if-statement must be of type ${BooleanType().source}"))
+                    }
+                    case Left(_) => conditionType
                 }
             }
 
@@ -109,31 +166,35 @@ object TypeChecker {
             case Function(alts) => {
                 val altTypes = alts.map(alt => getType(env, alt))
                 if (altTypes.length == 1) {
-                    Right(altTypes(0))
+                    altTypes(0)
                 } else {
-                    val comparisonType = altTypes(0)
-                    val otherTypes = altTypes.drop(1)
-                    val allEqual = otherTypes.forall(_ == comparisonType)
-                    if (allEqual) {
-                        Right(comparisonType)
-                    } else {
-                        Left(TypeError("all possible paths in a given function must be of the same type"))
-                    }
+                    ifNoTypeErrors(altTypes, altTypesExtracted => {
+                        val comparisonType = altTypesExtracted(0)
+                        val otherTypes = altTypesExtracted.drop(1)
+                        val allEqual = otherTypes.forall(_ == comparisonType)
+                        if (allEqual) {
+                            Right(comparisonType)
+                        } else {
+                            Left(TypeError("all possible paths in a given function must be of the same type"))
+                        }
+                    })
                 }
             }
             case FunctionWithClosures(closureAlts) => {
-                val altTypes = closureAlts.map((closureEnv, _, alt) => getType(closureEnv, alt))
+                val altTypes = closureAlts.map({ case (closureEnv, _, alt) => getType(closureEnv, alt) })
                 if (altTypes.length == 1) {
-                    Right(altTypes(0))
+                    altTypes(0)
                 } else {
-                    val comparisonType = altTypes(0)
-                    val otherTypes = altTypes.drop(1)
-                    val allEqual = otherTypes.forall(_ == comparisonType)
-                    if (allEqual) {
-                        Right(comparisonType)
-                    } else {
-                        Left(TypeError("all possible paths in a given function must be of the same type"))
-                    }
+                    ifNoTypeErrors(altTypes, altTypesExtracted => {
+                        val comparisonType = altTypesExtracted(0)
+                        val otherTypes = altTypesExtracted.drop(1)
+                        val allEqual = otherTypes.forall(_ == comparisonType)
+                        if (allEqual) {
+                            Right(comparisonType)
+                        } else {
+                            Left(TypeError("all possible paths in a given function must be of the same type"))
+                        }
+                    })
                 }
             }
             case Bra(e) => getType(env, e)
@@ -146,38 +207,38 @@ object TypeChecker {
     def getTypeOfBinop(env: Environment, op: String, l: Expr, r: Expr): Either[Error, Type] = {
         val lType = getType(env, l)
         val rType = getType(env, r)
-        def e(): Either[Error, Value] = {
+        def e(): Either[Error, Type] = {
             var lSource = ""
             var rSource = ""
             lType match {
                 case Right(t) => lSource = t.source
-                case x => x
+                case x => return x
             }
             rType match {
                 case Right(t) => rSource = t.source
-                case x => x
+                case x => return x
             }
             Left(TypeError(
                 s"operands of ${op} have mismatched types: lhs is of type ${lSource}, rhs is of type ${rSource}"
             ))
         }
-        def e1(): Either[Error, Value] = {
+        def e1(): Either[Error, Type] = {
             var lSource = ""
             var rSource = ""
             lType match {
                 case Right(t) => lSource = t.source
-                case x => x
+                case x => return x
             }
             rType match {
                 case Right(t) => rSource = t.source
-                case x => x
+                case x => return x
             }
             Left(TypeError(
                 s"${op} cannot be applied to values of type ${lSource} and ${rSource}"
             ))
         }
         op match {
-            case "+" | "-" | "*" | "/" | "^" | => {
+            case "+" | "-" | "*" | "/" | "^" => {
                 lType match {
                     case Right(IntegerType()) => {
                         rType match {
@@ -199,8 +260,8 @@ object TypeChecker {
             }
             case ":" => {
                 rType match {
-                    case SequenceType(subtype) => {
-                        if (lType == subtype) {
+                    case Right(SequenceType(subtype)) => {
+                        if (lType == Right(subtype)) {
                             Right(SequenceType(subtype))
                         } else {
                             e1()
@@ -239,7 +300,7 @@ object TypeChecker {
             case "||" | "&&" => {
                 lType match {
                     case Right(BooleanType()) => {
-                        rValue match {
+                        rType match {
                             case Right(BooleanType()) => Right(BooleanType())
                             case Right(_) => e1()
                             case x => x
@@ -289,6 +350,6 @@ object TypeChecker {
     }
 
     def unify(a: Type, b: Type): Either[Error, Type] = {
-
+        Left(NotImplemented())
     }
 }
