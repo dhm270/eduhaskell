@@ -302,7 +302,8 @@ qualifiers: List[SequenceComprehensionQualifier] = qualifier { List($qualifier) 
                                                    | qualifier maybeEOL ',' maybeEOL qualifiers { $qualifier :: $qualifiers }
 
 qualifier: SequenceComprehensionQualifier = pattern:pattern '<-' expression { SequenceComprehensionGenerator($pattern, $expression) }
-                                          | `let` equation { SequenceComprehensionDefinition($equation) }
+                                          | 'let' equation { SequenceComprehensionDefinition($equation) }
+                                          | expression  { SequenceComprehensionGuard($expression) }
 
 guardedEquation: GuardedEquation = pattern:pattern '|' rhss:RHSs where:whereClause { GuardedEquation($pattern, $rhss, $where) }
 

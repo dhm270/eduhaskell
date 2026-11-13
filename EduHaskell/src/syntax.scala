@@ -68,6 +68,9 @@ object syntax {
     case class SequenceComprehensionDefinition(defn: Definition) extends SequenceComprehensionQualifier {
         lazy val source = s"let ${defn.source}"
     }
+    case class SequenceComprehensionGuard(expr: Expr) extends SequenceComprehensionQualifier {
+        lazy val source = expr.source
+    }
 
     case class Binop(op: String, l: Expr, r: Expr) extends Expr {
         lazy val source = s"${l.source} $op ${r.source}"

@@ -525,7 +525,7 @@ object Evaluator {
             case Sequence(exprs) => evaluateSequence(env, exprs)
             case ArithmeticSequence(start, next, end) => evaluateArithmeticSequence(env, start, next, end)
             case DoubleDot() => Left(SyntaxError("`..` cannot appear here"))
-            case SequenceComprehension(expr, qualifiers) => Left(NotImplemented())
+            case SequenceComprehension(expr, qualifiers) => evaluateSequenceComprehension(env, List(), expr, qualifiers)
 
             case Binop(op, l, r) => evaluateBinop(env, op, l, r)
             case Prefix(op, e) => evaluatePrefix(env, op, e)
@@ -677,6 +677,82 @@ object Evaluator {
             }
             case Right(s) => Left(TypeError(s"cannot declare an arithmetic sequence of type ${s.getType()}"))
             case x => x
+        }
+    }
+
+    def evaluateSequenceComprehension(env: Environment, conflictingNames: Seq[String], expr: Expr, qualifiers: Seq[SequenceComprehensionQualifier]): Either[Error, Value] = {
+        // Recursively enumerate all items of the list.
+        // That means we're OK with receiving no qualifiers (might be from a recursive call).
+        if (qualifiers.length == 0) {
+            lazy val value = evaluate(env, expr)
+            return Right(ConsValue(
+                LazyValue(() => value),
+                LazyValue(() => Right(NilValue()))
+            ))
+        }
+
+        // Otherwise, we need to do something with the first qualifier.
+        val qualifierInQuestion = qualifiers(0)
+        val remainingQualifiers = qualifiers.drop(1)
+        
+        qualifierInQuestion match {
+            case SequenceComprehensionGenerator(pattern, generatorExpr) => {
+                def generateOver(generator: Either[Error, Value]): Either[Error, Value] = {
+                    generator match {
+                        case Right(ConsValue(lazyHead, lazyTail)) => {
+                            val maybeExtendedEnvironment = matchAndExtendEnvironment(env, conflictingNames, pattern, lazyHead)
+                            maybeExtendedEnvironment match {
+                                case Right((extendedEnvironment, newNames)) => {
+                                    val seqForThisValue = evaluateSequenceComprehension(extendedEnvironment, conflictingNames ++ newNames, expr, remainingQualifiers)
+                                    def concatWithNextSeq(seqForThisValue: Either[Error, Value]): Either[Error, Value] = {
+                                        seqForThisValue match {
+                                            case Right(ConsValue(h, t)) => {
+                                                val next = LazyValue(() => concatWithNextSeq(t.get()))
+                                                Right(ConsValue(h, next))
+                                            }
+                                            case Right(NilValue()) => generateOver(lazyTail.get())
+                                            case Left(_) => seqForThisValue
+                                        }
+                                    }
+                                    concatWithNextSeq(seqForThisValue)
+                                }
+                                case x => x.asInstanceOf[Either[Error, Value]]
+                            }
+                        }
+                        case Right(NilValue()) => Right(NilValue())
+                        case Right(x) => Left(TypeError(s"cannot qualify a sequence comprehension using an expression of type ${x.getType()}"))
+                        case x => x
+                    }
+                }
+                generateOver(evaluate(env, generatorExpr))
+            }
+            case SequenceComprehensionDefinition(defn) => {
+                val extendedEnvironment = withDefinition(env, defn)
+                extendedEnvironment match {
+                    case Right((newEnv, names)) => {
+                        if (conflictingNames.intersect(names).length == 0) {
+                            evaluateSequenceComprehension(newEnv, conflictingNames ++ names, expr, remainingQualifiers)
+                        } else {
+                            Left(ConflictingDefinitionsError(conflictingNames.intersect(names)))
+                        }
+                    }
+                    case x => x.asInstanceOf[Either[Error, Value]]
+                }
+            }
+            case SequenceComprehensionGuard(guard) => {
+                val conditionValue = evaluate(env, guard)
+                conditionValue match {
+                    case Right(BooleanValue(bool)) => {
+                        if (bool) {
+                            evaluateSequenceComprehension(env, conflictingNames, expr, remainingQualifiers)
+                        } else {
+                            Right(NilValue())
+                        }
+                    }
+                    case Right(x) => Left(TypeError(s"sequence comprehension guard is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}"))
+                    case x => x
+                }
+            }
         }
     }
 
