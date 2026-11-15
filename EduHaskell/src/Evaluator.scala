@@ -75,9 +75,9 @@ object Evaluator {
                                 val partialFuns = cases.map(f)
                                 val func = Function(partialFuns)
                                 lazy val newEnv: Environment = {
-                                    lazy val value = evaluate(newEnv, func)
+                                    lazy val cont = Recursive(newEnv, func)
                                     env.registerFunction(funcName)
-                                    env.define(funcName, LazyValue(() => value))
+                                    env.define(funcName, LazyValue(() => cont))
                                 }
                                 Right((newEnv, List(funcName)))
                             }
@@ -92,8 +92,8 @@ object Evaluator {
         lhs match {
             case Id(name) => {
                 lazy val newEnv: Environment = {
-                    lazy val value = evaluate(newEnv, rhs)
-                    env.define(name, LazyValue(() => value))
+                    lazy val cont = Recursive(newEnv, rhs)
+                    env.define(name, LazyValue(() => cont))
                 }
                 (newEnv, List(name))
             }
@@ -108,9 +108,9 @@ object Evaluator {
                         }
                         val asPartialFun = createPartialFun(lhs, None, rhs)
                         lazy val newEnv: Environment = {
-                            lazy val value = evaluate(newEnv, asPartialFun)
+                            lazy val cont = Recursive(newEnv, asPartialFun)
                             env.registerFunction(funcName)
-                            env.define(funcName, LazyValue(() => value))
+                            env.define(funcName, LazyValue(() => cont))
                         }
                         (newEnv, List(funcName))
                     }
@@ -184,9 +184,9 @@ object Evaluator {
         lazy val newEnv: Environment = {
             lazy val alts: Seq[(Environment, Seq[String], PartialFun)] = defs.flatMap(defn => toAlts(newEnv, defn))
             lazy val function = FunctionWithClosures(alts)
-            lazy val value = evaluate(newEnv, function)
+            lazy val cont = Recursive(newEnv, function)
             env.registerFunction(name)
-            env.define(name, LazyValue(() => value))
+            env.define(name, LazyValue(() => cont))
         }
         Right((newEnv, List(name)))
     }
@@ -308,7 +308,7 @@ object Evaluator {
 
             case Num(value) => {
                 val got = comparison.get()
-                got match {
+                evaluate(got) match {
                     case Right(IntValue(int)) => {
                         if (int == value) {
                             Right((env, List()))
@@ -322,7 +322,7 @@ object Evaluator {
 
             case Real(value) => {
                 val got = comparison.get()
-                got match {
+                evaluate(got) match {
                     case Right(RealValue(real)) => {
                         if (real == value) {
                             Right((env, List()))
@@ -336,7 +336,7 @@ object Evaluator {
 
             case Quote(value) => {
                 val got = comparison.get()
-                got match {
+                evaluate(got) match {
                     case Right(CharValue(c)) => {
                         if (value.opening == "'" && value.body == c.toString) {
                             Right((env, List()))
@@ -354,11 +354,11 @@ object Evaluator {
                                 case NilValue() => extracting = false
                                 case ConsValue(l, r) => {
                                     val charGot = l.get()
-                                    charGot match {
+                                    evaluate(charGot) match {
                                         case Right(CharValue(c)) => str += c
                                         case _ => valid = false
                                     }
-                                    r.get() match {
+                                    evaluate(r.get()) match {
                                         case Right(x) => pointer = x
                                         case _ => valid = false
                                     }
@@ -381,7 +381,7 @@ object Evaluator {
 
             case Tuple(patternExprs) => {
                 val got = comparison.get()
-                got match {
+                evaluate(got) match {
                     case Right(TupleValue(lazyVals)) => {
                         if (patternExprs.length == lazyVals.length) {
                             def f(acc: Either[Error, (Environment, Seq[String])], curr: (Expr, LazyValue)): Either[Error, (Environment, Seq[String])] = {
@@ -416,7 +416,7 @@ object Evaluator {
             case Sequence(patternExprs) => {
                 val got = comparison.get()
                 if (patternExprs.length == 0) {
-                    got match {
+                    evaluate(got) match {
                         case Right(NilValue()) => Right((env, List()))
                         case _ => Left(PatternMatchError())
                     }
@@ -427,7 +427,7 @@ object Evaluator {
 
             case Binop(":", l, r) => {
                 val got = comparison.get()
-                got match {
+                evaluate(got) match {
                     case Right(ConsValue(head, tail)) => {
                         val resultAfterHead = matchAndExtendEnvironment(env, conflictingNames, l, head)
                         resultAfterHead match {
@@ -451,12 +451,12 @@ object Evaluator {
         }
     }
 
-    def patternMatch(env: Environment, conflictingNames: Seq[String], pattern: Expr, guard: Option[Expr], comparison: LazyValue, expr: Expr): Either[Error, Value] = {
+    def patternMatch(env: Environment, conflictingNames: Seq[String], pattern: Expr, guard: Option[Expr], comparison: LazyValue, expr: Expr): EvaluateContinuation = {
         val (_, _, result) = patternMatchAndReturnEnvironment(env, conflictingNames, pattern, guard, comparison, expr)
         result
     }
 
-    def patternMatchAndReturnEnvironment(env: Environment, conflictingNames: Seq[String], pattern: Expr, guard: Option[Expr], comparison: LazyValue, expr: Expr): (Environment, Seq[String], Either[Error, Value]) = {
+    def patternMatchAndReturnEnvironment(env: Environment, conflictingNames: Seq[String], pattern: Expr, guard: Option[Expr], comparison: LazyValue, expr: Expr): (Environment, Seq[String], EvaluateContinuation) = {
         // Second argument in the result is the new names which we bound while doing this pattern match.
 
         // If the pattern is multiple things, then we convert it.
@@ -491,69 +491,186 @@ object Evaluator {
                         case p: PartialFun => e = FunctionWithClosures(List((newEnv, conflictingNames ++ newNames, p)))
                         case _ => {}
                     }
-                    (newEnv, newNames, evaluate(newEnv, e))
+                    (newEnv, newNames, Recursive(newEnv, e))
                 } else {
-                    (env, List(), Left(PatternMatchError()))
+                    (env, List(), Result(Left(PatternMatchError())))
                 }
             }
             case x => {
-                (env, List(), x.asInstanceOf[Either[Error, Value]])
+                (env, List(), Result(x.asInstanceOf[Either[Error, Value]]))
             }
         }
     }
 
+    sealed trait EvaluateContinuation
+    case class Recursive(env: Environment, e: Expr) extends EvaluateContinuation
+    case class Result(result: Either[Error, Value]) extends EvaluateContinuation
+
     def evaluate(env: Environment, e: Expr): Either[Error, Value] = {
-        e match {
-            case Op(name) => Left(NotImplemented())
-            case Id(name) => env.find(name).get()
+        evaluate(Recursive(env, e))
+    }
 
-            case Num(value) => Right(IntValue(value))
-            case Real(value) => Right(RealValue(value))
-            case Quote(quote) => quoteToValue(quote)
-
-            case Tuple(exprs) => {
-                if (exprs.length == 1) {
-                    evaluate(env, exprs(0))
-                } else {
-                    def evalAsLazyVal(e: Expr): LazyValue = {
-                        LazyValue(() => evaluate(env, e))
-                    }
-                    Right(TupleValue(exprs.map(evalAsLazyVal(_))))
-                }
-            }
-
-            case Sequence(exprs) => evaluateSequence(env, exprs)
-            case ArithmeticSequence(start, next, end) => evaluateArithmeticSequence(env, start, next, end)
-            case DoubleDot() => Left(SyntaxError("`..` cannot appear here"))
-            case SequenceComprehension(expr, qualifiers) => evaluateSequenceComprehension(env, List(), expr, qualifiers)
-
-            case Binop(op, l, r) => evaluateBinop(env, op, l, r)
-            case Prefix(op, e) => evaluatePrefix(env, op, e)
-            case Apply(l, r) => evaluateApply(env, l, r)
-            case If(condition, trueExpr, falseExpr) => evaluateIf(env, condition, trueExpr, falseExpr)
-
-            case Case(query, alts) => Left(NotImplemented())
-
-            case Where(e, defs) => {
-                val extendedEnvironment = withDefinitions(env, defs)
-                extendedEnvironment match {
-                    case Right((newEnv, names)) => evaluate(newEnv, e)
-                    case x => x.asInstanceOf[Either[Error, Value]]
-                }
-            }
-
-            case PartialFun(pattern, guard, expr) => {
-                def func(lazyValue: LazyValue): Either[Error, Value] = {
-                    patternMatch(env, List(), pattern, guard, lazyValue, expr)
-                }
-                Right(FunctionValue(func))
-            }
-            case Function(alts) => evaluateFunction(env, alts)
-            case FunctionWithClosures(closureAlts) => evaluateFunctionWithClosures(closureAlts)
-
-            case Bra(e) => evaluate(env, e)
-            case Assoc(op, exprs) => Left(NotImplemented())
+    def evaluate(cont: EvaluateContinuation): Either[Error, Value] = {
+        // If `cont` is `Result` then we short-circuit and return immediately.
+        cont match {
+            case Result(r) => return r
+            case _ => {}
         }
+
+        // Try and use iteration rather than recursion where possible
+        // to avoid stack overflow.
+        val rec = cont.asInstanceOf[Recursive]
+        var env = rec.env
+        var e = rec.e
+        while (true) {
+            e match {
+                case Op(name) => return Left(NotImplemented())
+                case Id(name) => {
+                    val continuation = env.find(name).get()
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+
+                case Num(value) => return Right(IntValue(value))
+                case Real(value) => return Right(RealValue(value))
+                case Quote(quote) => return quoteToValue(quote)
+
+                case Tuple(exprs) => {
+                    if (exprs.length == 1) {
+                        e = exprs(0)
+                    } else {
+                        def evalAsLazyVal(e: Expr): LazyValue = {
+                            LazyValue(() => Recursive(env, e))
+                        }
+                        return Right(TupleValue(exprs.map(evalAsLazyVal(_))))
+                    }
+                }
+
+                case Sequence(exprs) => {
+                    val continuation = evaluateSequence(env, exprs)
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+                case ArithmeticSequence(start, next, end) => {
+                    val continuation = evaluateArithmeticSequence(env, start, next, end)
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+                case DoubleDot() => return Left(SyntaxError("`..` cannot appear here"))
+                case SequenceComprehension(expr, qualifiers) => {
+                    val continuation = evaluateSequenceComprehension(env, List(), expr, qualifiers)
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+
+                case Binop(op, l, r) => {
+                    val continuation = evaluateBinop(env, op, l, r)
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+                case Prefix(op, expr) => {
+                    val continuation = evaluatePrefix(env, op, expr)
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+                case Apply(l, r) => {
+                    val continuation = evaluateApply(env, l, r)
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+                case If(condition, trueExpr, falseExpr) => {
+                    val continuation = evaluateIf(env, condition, trueExpr, falseExpr)
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+
+                case Case(query, alts) => return Left(NotImplemented())
+
+                case Where(expr, defs) => {
+                    val extendedEnvironment = withDefinitions(env, defs)
+                    extendedEnvironment match {
+                        case Right((newEnv, names)) => {
+                            env = newEnv
+                            e = expr
+                        }
+                        case x => return x.asInstanceOf[Either[Error, Value]]
+                    }
+                }
+
+                case PartialFun(pattern, guard, expr) => {
+                    def func(lazyValue: LazyValue): EvaluateContinuation = {
+                        patternMatch(env, List(), pattern, guard, lazyValue, expr)
+                    }
+                    return Right(FunctionValue(func))
+                }
+                case Function(alts) => {
+                    val continuation = evaluateFunction(env, alts)
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+                case FunctionWithClosures(closureAlts) => {
+                    val continuation = evaluateFunctionWithClosures(closureAlts)
+                    continuation match {
+                        case Recursive(env1, e1) => {
+                            env = env1
+                            e = e1
+                        }
+                        case Result(r) => return r
+                    }
+                }
+
+                case Bra(expr) => {
+                    e = expr
+                }
+                case Assoc(op, exprs) => return Left(NotImplemented())
+            }
+        }
+        Left(NotImplemented())
     }
 
     def stringToStringValue(str: String): Value = {
@@ -561,8 +678,8 @@ object Evaluator {
             NilValue()
         } else {
             ConsValue(
-                LazyValue(() => Right(CharValue(str(0)))),
-                LazyValue(() => Right(stringToStringValue(str.drop(1))))
+                LazyValue(() => Result(Right(CharValue(str(0))))),
+                LazyValue(() => Result(Right(stringToStringValue(str.drop(1)))))
             )
         }
     }
@@ -579,9 +696,9 @@ object Evaluator {
         }
     }
 
-    def evaluateSequence(env: Environment, exprs: Seq[Expr]): Either[Error, Value] = {
+    def evaluateSequence(env: Environment, exprs: Seq[Expr]): EvaluateContinuation = {
         if (exprs.exists(_.isInstanceOf[DoubleDot])) {
-            if (exprs(0).isInstanceOf[DoubleDot]) return Left(SyntaxError("malformed arithmetic sequence"))
+            if (exprs(0).isInstanceOf[DoubleDot]) return Result(Left(SyntaxError("malformed arithmetic sequence")))
             val start = exprs(0)
             var next: Option[Expr] = None
             var end: Option[Expr] = None
@@ -589,24 +706,24 @@ object Evaluator {
                 if (exprs.length == 3) {
                     end = Some(exprs(2))
                 } else if (exprs.length > 3) {
-                    return Left(SyntaxError("malformed arithmetic sequence"))
+                    return Result(Left(SyntaxError("malformed arithmetic sequence")))
                 }
             } else {
                 next = Some(exprs(1))
-                if (!exprs(2).isInstanceOf[DoubleDot]) return Left(SyntaxError("malformed arithmetic sequence"))
+                if (!exprs(2).isInstanceOf[DoubleDot]) return Result(Left(SyntaxError("malformed arithmetic sequence")))
                 if (exprs.length == 4) {
                     end = Some(exprs(3))
                 } else if (exprs.length > 4) {
-                    return Left(SyntaxError("malformed arithmetic sequence"))
+                    return Result(Left(SyntaxError("malformed arithmetic sequence")))
                 }
             }
             evaluateArithmeticSequence(env, start, next, end)
         } else if (exprs.length == 0) {
-            Right(NilValue())
+            Result(Right(NilValue()))
         } else {
             val head = exprs(0)
             val tail = exprs.drop(1)
-            evaluate(env, Binop(":", head, Sequence(tail)))
+            Recursive(env, Binop(":", head, Sequence(tail)))
         }
     }
 
@@ -615,7 +732,10 @@ object Evaluator {
             Right(NilValue())
         } else {
             lazy val restOfSequence = generateIntArithmeticSequence(start + step, step, end)
-            Right(ConsValue(LazyValue(() => Right(IntValue(start))), LazyValue(() => restOfSequence)))
+            Right(ConsValue(
+                LazyValue(() => Result(Right(IntValue(start)))),
+                LazyValue(() => Result(restOfSequence))
+            ))
         }
     }
 
@@ -624,11 +744,13 @@ object Evaluator {
             Right(NilValue())
         } else {
             lazy val restOfSequence = generateRealArithmeticSequence(start + step, step, end)
-            Right(ConsValue(LazyValue(() => Right(RealValue(start))), LazyValue(() => restOfSequence)))
+            Right(ConsValue(
+                LazyValue(() => Result(Right(RealValue(start)))), LazyValue(() => Result(restOfSequence))
+            ))
         }
     }
 
-    def evaluateArithmeticSequence(env: Environment, start: Expr, next: Option[Expr], end: Option[Expr]): Either[Error, Value] = {
+    def evaluateArithmeticSequence(env: Environment, start: Expr, next: Option[Expr], end: Option[Expr]): EvaluateContinuation = {
         val startValue = evaluate(env, start)
         startValue match {
             case Right(s @ IntValue(int)) => {
@@ -638,8 +760,8 @@ object Evaluator {
                     val nextValue = evaluate(env, next.get)
                     nextValue match {
                         case Right(IntValue(next)) => step = next - start
-                        case Right(r) => return Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, next is of type ${r.getType()}"))
-                        case x => return x
+                        case Right(r) => return Result(Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, next is of type ${r.getType()}")))
+                        case x => return Result(x)
                     }
                 }
                 var extractedEnd: Option[Long] = None
@@ -647,11 +769,11 @@ object Evaluator {
                     val endValue = evaluate(env, end.get)
                     endValue match {
                         case Right(IntValue(endInt)) => extractedEnd = Some(endInt)
-                        case Right(r) => return Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, end is of type ${r.getType()}"))
-                        case x => return x
+                        case Right(r) => return Result(Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, end is of type ${r.getType()}")))
+                        case x => return Result(x)
                     }
                 }
-                generateIntArithmeticSequence(start, step, extractedEnd)
+                Result(generateIntArithmeticSequence(start, step, extractedEnd))
             }
             case Right(s @ RealValue(real)) => {
                 val start = real
@@ -660,8 +782,8 @@ object Evaluator {
                     val nextValue = evaluate(env, next.get)
                     nextValue match {
                         case Right(RealValue(next)) => step = next - start
-                        case Right(r) => return Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, next is of type ${r.getType()}"))
-                        case x => return x
+                        case Right(r) => return Result(Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, next is of type ${r.getType()}")))
+                        case x => return Result(x)
                     }
                 }
                 var extractedEnd: Option[Double] = None
@@ -669,26 +791,26 @@ object Evaluator {
                     val endValue = evaluate(env, end.get)
                     endValue match {
                         case Right(RealValue(endReal)) => extractedEnd = Some(endReal)
-                        case Right(r) => return Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, end is of type ${r.getType()}"))
-                        case x => return x
+                        case Right(r) => return Result(Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, end is of type ${r.getType()}")))
+                        case x => return Result(x)
                     }
                 }
-                generateRealArithmeticSequence(start, step, extractedEnd)
+                Result(generateRealArithmeticSequence(start, step, extractedEnd))
             }
-            case Right(s) => Left(TypeError(s"cannot declare an arithmetic sequence of type ${s.getType()}"))
-            case x => x
+            case Right(s) => Result(Left(TypeError(s"cannot declare an arithmetic sequence of type ${s.getType()}")))
+            case x => Result(x)
         }
     }
 
-    def evaluateSequenceComprehension(env: Environment, conflictingNames: Seq[String], expr: Expr, qualifiers: Seq[SequenceComprehensionQualifier]): Either[Error, Value] = {
+    def evaluateSequenceComprehension(env: Environment, conflictingNames: Seq[String], expr: Expr, qualifiers: Seq[SequenceComprehensionQualifier]): EvaluateContinuation = {
         // Recursively enumerate all items of the list.
         // That means we're OK with receiving no qualifiers (might be from a recursive call).
         if (qualifiers.length == 0) {
-            lazy val value = evaluate(env, expr)
-            return Right(ConsValue(
-                LazyValue(() => value),
-                LazyValue(() => Right(NilValue()))
-            ))
+            lazy val cont = Recursive(env, expr)
+            return Result(Right(ConsValue(
+                LazyValue(() => cont),
+                LazyValue(() => Result(Right(NilValue())))
+            )))
         }
 
         // Otherwise, we need to do something with the first qualifier.
@@ -707,14 +829,20 @@ object Evaluator {
                                     def concatWithNextSeq(seqForThisValue: Either[Error, Value]): Either[Error, Value] = {
                                         seqForThisValue match {
                                             case Right(ConsValue(h, t)) => {
-                                                val next = LazyValue(() => concatWithNextSeq(t.get()))
+                                                val next = LazyValue(
+                                                    () => Result(
+                                                        concatWithNextSeq(evaluate(t.get()))
+                                                    )
+                                                )
                                                 Right(ConsValue(h, next))
                                             }
-                                            case Right(NilValue()) => generateOver(lazyTail.get())
+                                            case Right(NilValue()) => generateOver(evaluate(lazyTail.get()))
                                             case Left(_) => seqForThisValue
                                         }
                                     }
-                                    concatWithNextSeq(seqForThisValue)
+                                    seqForThisValue match {
+                                        case Result(s) => concatWithNextSeq(s)
+                                    }
                                 }
                                 case x => x.asInstanceOf[Either[Error, Value]]
                             }
@@ -724,7 +852,7 @@ object Evaluator {
                         case x => x
                     }
                 }
-                generateOver(evaluate(env, generatorExpr))
+                Result(generateOver(evaluate(env, generatorExpr)))
             }
             case SequenceComprehensionDefinition(defn) => {
                 val extendedEnvironment = withDefinition(env, defn)
@@ -733,10 +861,10 @@ object Evaluator {
                         if (conflictingNames.intersect(names).length == 0) {
                             evaluateSequenceComprehension(newEnv, conflictingNames ++ names, expr, remainingQualifiers)
                         } else {
-                            Left(ConflictingDefinitionsError(conflictingNames.intersect(names)))
+                            Result(Left(ConflictingDefinitionsError(conflictingNames.intersect(names))))
                         }
                     }
-                    case x => x.asInstanceOf[Either[Error, Value]]
+                    case x => Result(x.asInstanceOf[Either[Error, Value]])
                 }
             }
             case SequenceComprehensionGuard(guard) => {
@@ -746,21 +874,27 @@ object Evaluator {
                         if (bool) {
                             evaluateSequenceComprehension(env, conflictingNames, expr, remainingQualifiers)
                         } else {
-                            Right(NilValue())
+                            Result(Right(NilValue()))
                         }
                     }
-                    case Right(x) => Left(TypeError(s"sequence comprehension guard is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}"))
-                    case x => x
+                    case Right(x) => Result(Left(TypeError(s"sequence comprehension guard is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}")))
+                    case x => Result(x)
                 }
             }
         }
     }
 
-    def evaluateBinop(env: Environment, op: String, l: Expr, r: Expr): Either[Error, Value] = {
-        def e(op: String, l: Value, r: Value): Either[Error, Value] = {
-            Left(TypeError(
+    def evaluateBinop(env: Environment, op: String, l: Expr, r: Expr): EvaluateContinuation = {
+        def e(op: String, l: Value, r: Value): EvaluateContinuation = {
+            Result(Left(TypeError(
                 s"operands of ${op} have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"
-            ))
+            )))
+        }
+        def ok(value: Value): EvaluateContinuation = {
+            Result(Right(value))
+        }
+        def bad(err: Error): EvaluateContinuation = {
+            Result(Left(err))
         }
         lazy val lValue = evaluate(env, l)
         lazy val rValue = evaluate(env, r)
@@ -769,355 +903,367 @@ object Evaluator {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => Right(IntValue(int1 + int2))
+                            case Right(IntValue(int2)) => ok(IntValue(int1 + int2))
                             case Right(r) => e("+", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => Right(RealValue(real1 + real2))
+                            case Right(RealValue(real2)) => ok(RealValue(real1 + real2))
                             case Right(r) => e("+", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(x) => Left(TypeError(s"lhs operand of + has type ${x.getType()}, which is illegal"))
-                    case x => x
+                    case Right(x) => bad(TypeError(s"lhs operand of + has type ${x.getType()}, which is illegal"))
+                    case x => Result(x)
                 }
             }
             case "-" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => Right(IntValue(int1 - int2))
+                            case Right(IntValue(int2)) => ok(IntValue(int1 - int2))
                             case Right(r) => e("-", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => Right(RealValue(real1 - real2))
+                            case Right(RealValue(real2)) => ok(RealValue(real1 - real2))
                             case Right(r) => e("-", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(x) => Left(TypeError(s"lhs operand of - has type ${x.getType()}, which is illegal"))
-                    case x => x
+                    case Right(x) => bad(TypeError(s"lhs operand of - has type ${x.getType()}, which is illegal"))
+                    case x => Result(x)
                 }
             }
             case "*" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => Right(IntValue(int1 * int2))
+                            case Right(IntValue(int2)) => ok(IntValue(int1 * int2))
                             case Right(r) => e("*", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => Right(RealValue(real1 * real2))
+                            case Right(RealValue(real2)) => ok(RealValue(real1 * real2))
                             case Right(r) => e("*", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(x) => Left(TypeError(s"lhs operand of * is of type ${x.getType()}, which is illegal"))
-                    case x => x
+                    case Right(x) => bad(TypeError(s"lhs operand of * is of type ${x.getType()}, which is illegal"))
+                    case x => Result(x)
                 }
             }
             case "/" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => if (int2 == 0) { Left(DivisionByZero()) } else { Right(IntValue(int1 / int2)) }
+                            case Right(IntValue(int2)) => if (int2 == 0) { bad(DivisionByZero()) } else { ok(IntValue(int1 / int2)) }
                             case Right(r) => e("/", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => if (real2 == 0) { Left(DivisionByZero()) } else { Right(RealValue(real1 / real2)) }
+                            case Right(RealValue(real2)) => if (real2 == 0) { bad(DivisionByZero()) } else { ok(RealValue(real1 / real2)) }
                             case Right(r) => e("/", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(x) => Left(TypeError(s"lhs operand of / is of type ${x.getType()}, which is illegal"))
-                    case x => x
+                    case Right(x) => bad(TypeError(s"lhs operand of / is of type ${x.getType()}, which is illegal"))
+                    case x => Result(x)
                 }
             }
             case "^" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => Right(IntValue(Math.pow(int1, int2).intValue))
+                            case Right(IntValue(int2)) => ok(IntValue(Math.pow(int1, int2).intValue))
                             case Right(r) => e("^", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => Right(RealValue(Math.pow(real1, real2)))
+                            case Right(RealValue(real2)) => ok(RealValue(Math.pow(real1, real2)))
                             case Right(r) => e("^", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(x) => Left(TypeError(s"lhs operand of ^ is of type ${x.getType()}, which is illegal"))
-                    case x => x
+                    case Right(x) => bad(TypeError(s"lhs operand of ^ is of type ${x.getType()}, which is illegal"))
+                    case x => Result(x)
                 }
             }
             case ":" => {
                 // TODO: some kind of type checking
-                Right(ConsValue(LazyValue(() => lValue), LazyValue(() => rValue)))
+                ok(ConsValue(LazyValue(() => Result(lValue)), LazyValue(() => Result(rValue))))
             }
             case "==" => valuesEqual(lValue, rValue)
             case "<" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => Right(BooleanValue(int1 < int2))
+                            case Right(IntValue(int2)) => ok(BooleanValue(int1 < int2))
                             case Right(r) => e("<", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => Right(BooleanValue(real1 < real2))
+                            case Right(RealValue(real2)) => ok(BooleanValue(real1 < real2))
                             case Right(r) => e("<", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(x) => Left(NotImplemented())
-                    case x => x
+                    case Right(x) => bad(NotImplemented())
+                    case x => Result(x)
                 }
             }
             case "<=" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => Right(BooleanValue(int1 <= int2))
+                            case Right(IntValue(int2)) => ok(BooleanValue(int1 <= int2))
                             case Right(r) => e("<=", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => Right(BooleanValue(real1 <= real2))
+                            case Right(RealValue(real2)) => ok(BooleanValue(real1 <= real2))
                             case Right(r) => e("<=", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(x) => Left(NotImplemented())
-                    case x => x
+                    case Right(x) => bad(NotImplemented())
+                    case x => Result(x)
                 }
             }
             case ">=" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => Right(BooleanValue(int1 >= int2))
+                            case Right(IntValue(int2)) => ok(BooleanValue(int1 >= int2))
                             case Right(r) => e(">=", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => Right(BooleanValue(real1 >= real2))
+                            case Right(RealValue(real2)) => ok(BooleanValue(real1 >= real2))
                             case Right(r) => e(">=", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(x) => Left(NotImplemented())
-                    case x => x
+                    case Right(x) => bad(NotImplemented())
+                    case x => Result(x)
                 }
             }
             case ">" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
-                            case Right(IntValue(int2)) => Right(BooleanValue(int1 > int2))
+                            case Right(IntValue(int2)) => ok(BooleanValue(int1 > int2))
                             case Right(r) => e(">", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
-                            case Right(RealValue(real2)) => Right(BooleanValue(real1 > real2))
+                            case Right(RealValue(real2)) => ok(BooleanValue(real1 > real2))
                             case Right(r) => e(">", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(x) => Left(NotImplemented())
-                    case x => x
+                    case Right(x) => bad(NotImplemented())
+                    case x => Result(x)
                 }
             }
             case "||" => {
                 lValue match {
                     case Right(l @ BooleanValue(false)) => {
                         rValue match {
-                            case r @ Right(BooleanValue(_)) => r
+                            case r @ Right(BooleanValue(_)) => Result(r)
                             case Right(r) => e("||", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(BooleanValue(true)) => Right(BooleanValue(true))
-                    case Right(x) => Left(NotImplemented())
-                    case x => x
+                    case Right(BooleanValue(true)) => ok(BooleanValue(true))
+                    case Right(x) => bad(NotImplemented())
+                    case x => Result(x)
                 }
             }
             case "&&" => {
                 lValue match {
                     case Right(l @ BooleanValue(true)) => {
                         rValue match {
-                            case r @ Right(BooleanValue(_)) => r
+                            case r @ Right(BooleanValue(_)) => Result(r)
                             case Right(r) => e("&&", l, r)
-                            case x => x
+                            case x => Result(x)
                         }
                     }
-                    case Right(BooleanValue(false)) => Right(BooleanValue(false))
-                    case Right(x) => Left(NotImplemented())
-                    case x => x
+                    case Right(BooleanValue(false)) => ok(BooleanValue(false))
+                    case Right(x) => bad(NotImplemented())
+                    case x => Result(x)
                 }
             }
         }
     }
 
-    def valuesEqual(lValue: Either[Error, Value], rValue: Either[Error, Value]): Either[Error, Value] = {
+    def valuesEqual(lValue: Either[Error, Value], rValue: Either[Error, Value]): EvaluateContinuation = {
         def m(l: Value, r: Value): String = {
             s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"
+        }
+        def ok(value: Value): EvaluateContinuation = {
+            Result(Right(value))
+        }
+        def bad(err: Error): EvaluateContinuation = {
+            Result(Left(err))
         }
         lValue match {
             case Right(l @ IntValue(int1)) => {
                 rValue match {
-                    case Right(IntValue(int2)) => Right(BooleanValue(int1 == int2))
-                    case Right(r) => Left(TypeError(m(l, r)))
-                    case x => x
+                    case Right(IntValue(int2)) => ok(BooleanValue(int1 == int2))
+                    case Right(r) => bad(TypeError(m(l, r)))
+                    case x => Result(x)
                 }
             }
             case Right(l @ RealValue(real1)) => {
                 rValue match {
-                    case Right(RealValue(real2)) => Right(BooleanValue(real1 == real2))
-                    case Right(r) => Left(TypeError(m(l, r)))
-                    case x => x
+                    case Right(RealValue(real2)) => ok(BooleanValue(real1 == real2))
+                    case Right(r) => bad(TypeError(m(l, r)))
+                    case x => Result(x)
                 }
             }
             case Right(l @ CharValue(char1)) => {
                 rValue match {
-                    case Right(CharValue(char2)) => Right(BooleanValue(char1 == char2))
-                    case Right(r) => Left(TypeError(m(l, r)))
-                    case x => x
+                    case Right(CharValue(char2)) => ok(BooleanValue(char1 == char2))
+                    case Right(r) => bad(TypeError(m(l, r)))
+                    case x => Result(x)
                 }
             }
             case Right(l @ BooleanValue(bool1)) => {
                 rValue match {
-                    case Right(BooleanValue(bool2)) => Right(BooleanValue(bool1 == bool2))
-                    case Right(r) => Left(TypeError(m(l, r)))
-                    case x => x
+                    case Right(BooleanValue(bool2)) => ok(BooleanValue(bool1 == bool2))
+                    case Right(r) => bad(TypeError(m(l, r)))
+                    case x => Result(x)
                 }
             }
             case Right(l @ FunctionValue(_)) => {
-                Left(TypeError("functions cannot be compared"))
+                bad(TypeError("functions cannot be compared"))
             }
             case Right(l @ ConsValue(head1, tail1)) => {
                 rValue match {
                     case Right(ConsValue(head2, tail2)) => {
-                        val headEqualityResult = valuesEqual(head1.get(), head2.get())
-                        headEqualityResult match {
-                            case Right(BooleanValue(true)) => valuesEqual(tail1.get(), tail2.get())
-                            case x => x
+                        val headEqualityResult = valuesEqual(evaluate(head1.get()), evaluate(head2.get()))
+                        evaluate(headEqualityResult) match {
+                            case Right(BooleanValue(true)) => valuesEqual(evaluate(tail1.get()), evaluate(tail2.get()))
+                            case x => Result(x)
                         }
                     }
-                    case Right(NilValue()) => Right(BooleanValue(false))
-                    case Right(r) => Left(TypeError(m(l, r)))
-                    case x => x
+                    case Right(NilValue()) => ok(BooleanValue(false))
+                    case Right(r) => bad(TypeError(m(l, r)))
+                    case x => Result(x)
                 }
             }
             case Right(l @ NilValue()) => {
                 rValue match {
-                    case Right(NilValue()) => Right(BooleanValue(true))
-                    case Right(ConsValue(_, _)) => Right(BooleanValue(false))
-                    case Right(r) => Left(TypeError(m(l, r)))
-                    case x => x
+                    case Right(NilValue()) => ok(BooleanValue(true))
+                    case Right(ConsValue(_, _)) => ok(BooleanValue(false))
+                    case Right(r) => bad(TypeError(m(l, r)))
+                    case x => Result(x)
                 }
             }
             case Right(l @ TupleValue(vals1)) => {
                 rValue match {
                     case Right(r @ TupleValue(vals2)) => {
                         if (vals1.length == vals2.length) {
-                            def f(acc: Either[Error, Value], curr: (LazyValue, LazyValue)): Either[Error, Value] = {
-                                acc match {
+                            def f(acc: EvaluateContinuation, curr: (LazyValue, LazyValue)): EvaluateContinuation = {
+                                evaluate(acc) match {
                                     case Right(BooleanValue(true)) => {
                                         curr match {
                                             case (l, r) => {
-                                                val lValue = l.get()
-                                                val rValue = r.get()
+                                                val lValue = evaluate(l.get())
+                                                val rValue = evaluate(r.get())
                                                 valuesEqual(lValue, rValue)
                                             }
-                                            case _ => Right(BooleanValue(false))
+                                            case _ => ok(BooleanValue(false))
                                         }
                                     }
                                     case _ => acc
                                 }
                             }
-                            val x: Either[Error, Value] = Right(BooleanValue(true))
+                            val x: EvaluateContinuation = ok(BooleanValue(true))
                             vals1.zip(vals2).foldLeft(x)(f)
                         } else {
-                            Left(TypeError(m(l, r)))
+                            bad(TypeError(m(l, r)))
                         }
                     }
-                    case Right(r) => Left(TypeError(m(l, r)))
-                    case x => x
+                    case Right(r) => bad(TypeError(m(l, r)))
+                    case x => Result(x)
                 }
             }
-            case x @ Left(_) => x
+            case x @ Left(_) => Result(x)
         }
     }
 
-    def evaluatePrefix(env: Environment, op: String, e: Expr): Either[Error, Value] = {
+    def evaluatePrefix(env: Environment, op: String, e: Expr): EvaluateContinuation = {
         lazy val eValue = evaluate(env, e)
         op match {
             case "-" => {
                 eValue match {
-                    case Right(IntValue(int)) => Right(IntValue(-int))
-                    case Right(RealValue(real)) => Right(RealValue(-real))
-                    case Right(x) => Left(TypeError(s"cannot negate a value of type ${x.getType()}"))
-                    case x => x
+                    case Right(IntValue(int)) => Result(Right(IntValue(-int)))
+                    case Right(RealValue(real)) => Result(Right(RealValue(-real)))
+                    case Right(x) => Result(Left(TypeError(s"cannot negate a value of type ${x.getType()}")))
+                    case x => Result(x)
                 }
             }
         }
     }
 
-    def evaluateApply(env: Environment, l: Expr, r: Expr): Either[Error, Value] = {
+    def evaluateApply(env: Environment, l: Expr, r: Expr): EvaluateContinuation = {
         lazy val lValue = evaluate(env, l)
         lazy val rValue = evaluate(env, r)
         lValue match {
             case Right(FunctionValue(func)) => {
-                def f(): Either[Error, Value] = {
-                    evaluate(env, r)
+                def f(): EvaluateContinuation = {
+                    Recursive(env, r)
                 }
                 func(LazyValue(f))
             }
-            case Right(x) => Left(TypeError(s"cannot call a value of type ${x.getType()}"))
-            case x => x
+            case Right(x) => Result(Left(TypeError(s"cannot call a value of type ${x.getType()}")))
+            case x => Result(x)
         }
     }
 
-    def evaluateIf(env: Environment, condition: Expr, trueExpr: Expr, falseExpr: Expr): Either[Error, Value] = {
+    def evaluateIf(env: Environment, condition: Expr, trueExpr: Expr, falseExpr: Expr): EvaluateContinuation = {
         val conditionValue = evaluate(env, condition)
         conditionValue match {
-            case Right(BooleanValue(bool)) => if (bool) { evaluate(env, trueExpr) } else { evaluate(env, falseExpr) }
-            case Right(x) => Left(TypeError(s"if-statement condition is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}"))
-            case x => x
+            case Right(BooleanValue(bool)) => {
+                if (bool) {
+                    Recursive(env, trueExpr)
+                } else {
+                    Recursive(env, falseExpr)
+                }
+            }
+            case Right(x) => Result(Left(TypeError(s"if-statement condition is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}")))
+            case x => Result(x)
         }
     }
 
-    def evaluateFunction(env: Environment, alts: Seq[PartialFun]): Either[Error, Value] = {
+    def evaluateFunction(env: Environment, alts: Seq[PartialFun]): EvaluateContinuation = {
         val modifiedAlts = alts.map(alt => (env, List(), alt))
         evaluateFunctionWithClosures(modifiedAlts)
     }
 
-    def evaluateFunctionWithClosures(alts: Seq[(Environment, Seq[String], PartialFun)]): Either[Error, Value] = {
-        if (alts.length == 0) return Left(PatternMatchError())
-        def func(lazyValue: LazyValue): Either[Error, Value] = {
+    def evaluateFunctionWithClosures(alts: Seq[(Environment, Seq[String], PartialFun)]): EvaluateContinuation = {
+        if (alts.length == 0) return Result(Left(PatternMatchError()))
+        def func(lazyValue: LazyValue): EvaluateContinuation = {
             alts(0) match {
                 case (env, _, PartialFun(Apply(_, _), _, _)) => {
                     // i.e. there is another argument after this one, so we will certainly
@@ -1128,7 +1274,7 @@ object Evaluator {
                             case (env, names, PartialFun(pattern, guard, expr)) => {
                                 val (newEnv, newNames, result) = patternMatchAndReturnEnvironment(env, names, pattern, guard, lazyValue, expr)
                                 result match {
-                                    case Left(PatternMatchError()) => acc
+                                    case Result(Left(PatternMatchError())) => acc
                                     case _ => {
                                         // Remove the first argument from the partial function, since we've already evaluated it
                                         val editedPartialFun = createPartialFun(pattern, guard, expr)
@@ -1142,27 +1288,29 @@ object Evaluator {
                     val matches = alts.foldLeft(x)(f)
                     // In the line below, `env` is a dummy value.
                     // The actual clause in `evaluate` doesn't use it.
-                    evaluate(env, FunctionWithClosures(matches))
+                    Recursive(env, FunctionWithClosures(matches))
                 }
                 case (_, _, _) => {
                     // this is the last argument, so we will return a non-function
-                    def f(acc: Either[Error, Value], curr: (Environment, Seq[String], PartialFun)): Either[Error, Value] = {
-                        acc match {
+                    def f(acc: EvaluateContinuation, curr: (Environment, Seq[String], PartialFun)): EvaluateContinuation = {
+                        evaluate(acc) match {
                             case Right(_) => acc // we have already successfully pattern matched
                             case Left(PatternMatchError()) => {
                                 // i.e. we haven't successfully matched yet, so we keep going
                                 curr match {
-                                    case (env, names, PartialFun(pattern, guard, expr)) => patternMatch(env, names, pattern, guard, lazyValue, expr)
+                                    case (env, names, PartialFun(pattern, guard, expr)) => {
+                                        patternMatch(env, names, pattern, guard, lazyValue, expr)
+                                    }
                                 }
                             }
                             case Left(_) => acc
                         }
                     }
-                    val x: Either[Error, Value] = Left(PatternMatchError())
+                    val x: EvaluateContinuation = Result(Left(PatternMatchError()))
                     alts.foldLeft(x)(f)
                 }
             }
         }
-        Right(FunctionValue(func))
+        Result(Right(FunctionValue(func)))
     }
 }

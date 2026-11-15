@@ -4,6 +4,7 @@ import collection.mutable.Map
 
 import eduhaskell.syntax._
 import eduhaskell.errors._
+import eduhaskell.Evaluator
 
 trait Value {
     val eagerSource: String
@@ -35,7 +36,7 @@ case class BooleanValue(value: Boolean) extends Value {
     override def getType(): String = "Boolean"
 }
 
-case class FunctionValue(func: LazyValue => Either[Error, Value]) extends Value {
+case class FunctionValue(func: LazyValue => Evaluator.EvaluateContinuation) extends Value {
     lazy val eagerSource = "<function value>"
     override def getType(): String = "Function" // TODO: better type
 }
@@ -55,25 +56,25 @@ case class TupleValue(vals: Seq[LazyValue]) extends Value {
     override def getType(): String = "Tuple" // TODO: better type
 }
 
-case class LazyValue(private var getter: () => Either[Error, Value]) {
+case class LazyValue(private var getter: () => Evaluator.EvaluateContinuation) {
     lazy val eagerSource: String = {
         val got = this.getter()
-        got match {
+        Evaluator.evaluate(got) match {
             case Right(v) => v.eagerSource
             case Left(e) => s"*** Error: ${e.message}"
         }
     }
 
-    def get(): Either[Error, Value] = this.getter()
+    def get(): Evaluator.EvaluateContinuation = this.getter()
 }
 
 object LazyValue {
     def lazyPrint(v: Value): Unit = {
-        this.lazyPrint(LazyValue(() => Right(v)))
+        this.lazyPrint(LazyValue(() => Evaluator.Result(Right(v))))
     }
 
     def lazyPrint(lv: LazyValue): Unit = {
-        lv.get() match {
+        Evaluator.evaluate(lv.get()) match {
             case Left(e) => {
                 print(s"*** Error: ${e.message}")
             }
@@ -103,7 +104,7 @@ object LazyValue {
         var curr = list
         var isFirstItem = true
         while (printing) {
-            curr.get() match {
+            Evaluator.evaluate(curr.get()) match {
                 case Right(ConsValue(h, t)) => {
                     if (!isFirstItem) print(", ")
                     isFirstItem = false
@@ -138,7 +139,7 @@ class Environment(private var map: Map[String, LazyValue], private var functions
         if (map.isDefinedAt(ident)) {
             map(ident)
         } else {
-            LazyValue(() => Left(UndeclaredVariable(ident)))
+            LazyValue(() => Evaluator.Result(Left(UndeclaredVariable(ident))))
         }
     }
 
