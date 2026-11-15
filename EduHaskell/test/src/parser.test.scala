@@ -67,7 +67,32 @@ class ParserTests extends munit.FunSuite {
                         if (!structureMatches(expr, expr1)) {
                             false
                         } else {
-                            qualifiers.zip(qualifiers1).forall({ case ((a1, b1), (a2, b2)) => structureMatches(a1, a2) && structureMatches(b1, b2) })
+                            def qualifiersMatch(quals: (SequenceComprehensionQualifier, SequenceComprehensionQualifier)): Boolean = {
+                                val (a, b) = quals
+                                a match {
+                                    case SequenceComprehensionGenerator(pattern, expr) => {
+                                        b match {
+                                            case SequenceComprehensionGenerator(pattern1, expr1) => {
+                                                structureMatches(pattern, pattern1) && structureMatches(expr, expr1)
+                                            }
+                                            case _ => false
+                                        }
+                                    }
+                                    case SequenceComprehensionDefinition(defn) => {
+                                        b match {
+                                            case SequenceComprehensionDefinition(defn1) => structureMatches(defn, defn1)
+                                            case _ => false
+                                        }
+                                    }
+                                    case SequenceComprehensionGuard(expr) => {
+                                        b match {
+                                            case SequenceComprehensionGuard(expr1) => structureMatches(expr, expr1)
+                                            case _ => false
+                                        }
+                                    }
+                                }
+                            }
+                            qualifiers.zip(qualifiers1).forall(qualifiersMatch)
                         }
                     }
                     case _ => false
@@ -312,8 +337,8 @@ class ParserTests extends munit.FunSuite {
         val expectedResult = SequenceComprehension(
             Id("x"),
             List(
-                (Id("x"), Id("y")),
-                (Id("y"), Id("z"))
+                SequenceComprehensionGenerator(Id("x"), Id("y")),
+                SequenceComprehensionGenerator(Id("y"), Id("z"))
             )
         )
         assert(structureMatches(result, expectedResult))

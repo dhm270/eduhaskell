@@ -46,6 +46,10 @@ class EvaluatorTests extends munit.FunSuite {
             case _ => false
         }
     }
+
+    def extend(env: Environment, ident: String, value: Value): Environment = {
+        env.define(ident, LazyValue(() => Right(value)))
+    }
     
     test("Evaluate 1") {
         val result = parseAndEvaluate("1")
@@ -66,7 +70,7 @@ class EvaluatorTests extends munit.FunSuite {
     }
 
     test("Evaluate variable defined in environment") {
-        val env = Environment.empty.define("x", IntValue(3))
+        val env = extend(Environment.empty, "x", IntValue(3))
         val result = parseAndEvaluateInEnvironment(env, "x")
         val expectedResult = IntValue(3)
         assert(result == expectedResult)
@@ -79,7 +83,7 @@ class EvaluatorTests extends munit.FunSuite {
     }
 
     test("Evaluate if-statement with non-empty environment") {
-        val env = Environment.empty.define("x", IntValue(3))
+        val env = extend(Environment.empty, "x", IntValue(3))
         val result = parseAndEvaluateInEnvironment(env, "if x < 3 then 3 else 4")
         val expectedResult = IntValue(4)
         assert(result == expectedResult)
@@ -173,21 +177,27 @@ class EvaluatorTests extends munit.FunSuite {
     }
 
     test("Evaluate true == true") {
-        val env = Environment.empty.define("true", BooleanValue(true))
+        val env = extend(Environment.empty, "true", BooleanValue(true))
         val result = parseAndEvaluateInEnvironment(env, "true == true")
         val expectedResult = BooleanValue(true)
         assert(result == expectedResult)
     }
 
     test("Evaluate true == false") {
-        val env = Environment.empty.defineMultiple(List("true", "false"), List(BooleanValue(true), BooleanValue(false)))
+        val env = extend(
+            extend(Environment.empty, "false", BooleanValue(false)),
+            "true", BooleanValue(true)
+        )
         val result = parseAndEvaluateInEnvironment(env, "true == false")
         val expectedResult = BooleanValue(false)
         assert(result == expectedResult)
     }
     
     test("Evaluate (true == false) == false") {
-        val env = Environment.empty.defineMultiple(List("true", "false"), List(BooleanValue(true), BooleanValue(false)))
+        val env = extend(
+            extend(Environment.empty, "false", BooleanValue(false)),
+            "true", BooleanValue(true)
+        )
         val result = parseAndEvaluateInEnvironment(env, "(true == false) == false")
         val expectedResult = BooleanValue(true)
         assert(result == expectedResult)
