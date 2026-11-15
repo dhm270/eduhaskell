@@ -142,20 +142,8 @@ class Environment(private var map: Map[String, LazyValue], private var functions
         }
     }
 
-    def define(ident: String, value: Value): Environment = {
-        this.extended(ident, LazyValue(() => Right(value)))
-    }
-
-    def lazyDefine(ident: String, lazyValue: LazyValue): Environment = {
+    def define(ident: String, lazyValue: LazyValue): Environment = {
         this.extended(ident, lazyValue)
-    }
-
-    def defineMultiple(idents: List[String], values: List[Value]): Environment = {
-        if (idents.length == values.length) {
-            idents.zip(values).foldLeft(this)((acc, curr) => curr match { case (ident, value) => acc.define(ident, value) })
-        } else {
-            throw new java.lang.IllegalArgumentException("idents must be the same length as values")
-        }
     }
 
     def isFunctionInScope(ident: String): Boolean = this.functionsInScope.contains(ident)

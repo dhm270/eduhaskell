@@ -77,7 +77,7 @@ object Evaluator {
                                 lazy val newEnv: Environment = {
                                     lazy val value = evaluate(newEnv, func)
                                     env.registerFunction(funcName)
-                                    env.lazyDefine(funcName, LazyValue(() => value))
+                                    env.define(funcName, LazyValue(() => value))
                                 }
                                 Right((newEnv, List(funcName)))
                             }
@@ -93,7 +93,7 @@ object Evaluator {
             case Id(name) => {
                 lazy val newEnv: Environment = {
                     lazy val value = evaluate(newEnv, rhs)
-                    env.lazyDefine(name, LazyValue(() => value))
+                    env.define(name, LazyValue(() => value))
                 }
                 (newEnv, List(name))
             }
@@ -110,7 +110,7 @@ object Evaluator {
                         lazy val newEnv: Environment = {
                             lazy val value = evaluate(newEnv, asPartialFun)
                             env.registerFunction(funcName)
-                            env.lazyDefine(funcName, LazyValue(() => value))
+                            env.define(funcName, LazyValue(() => value))
                         }
                         (newEnv, List(funcName))
                     }
@@ -186,7 +186,7 @@ object Evaluator {
             lazy val function = FunctionWithClosures(alts)
             lazy val value = evaluate(newEnv, function)
             env.registerFunction(name)
-            env.lazyDefine(name, LazyValue(() => value))
+            env.define(name, LazyValue(() => value))
         }
         Right((newEnv, List(name)))
     }
@@ -302,7 +302,7 @@ object Evaluator {
                 if (conflictingNames.contains(name)) {
                     Left(ConflictingDefinitionsError(List(name)))
                 } else {
-                    Right((env.lazyDefine(name, comparison), List(name)))
+                    Right((env.define(name, comparison), List(name)))
                 }
             }
 
