@@ -69,11 +69,6 @@
 
       def visit(it: Op): Layout.Box = text(it.source)
 
-      def visit(it: Assoc): Layout.Box = {
-        val boxes = it.exprs.map(ExprFormat(_))           //(_.visit(ExprFormat))
-        text(it.op) <+> bracketed("(".t, boxes, ")".t)
-      }
-
       def visit(it: If): Layout.Box = {
         it.source.text
       }

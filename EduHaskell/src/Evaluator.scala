@@ -609,7 +609,6 @@ object Evaluator {
                 )
 
                 case Bra(expr) => e = expr
-                case Assoc(op, exprs) => return Left(NotImplemented())
             }
         }
         result.get

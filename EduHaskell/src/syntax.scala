@@ -114,12 +114,6 @@ object syntax {
         override lazy val original: Expr = Tuple(List(e))
     }
 
-    case class Assoc(op: String, exprs: Seq[Expr]) extends Expr {
-        def mkBin(op: String)(l: Expr, r: Expr): Expr = Binop(op, l, r)
-        lazy val source = original.source
-        override lazy val original = exprs.reduceLeft(mkBin(op))
-    }
-
 
     sealed trait Definition extends TREE
 

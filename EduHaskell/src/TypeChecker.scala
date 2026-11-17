@@ -198,7 +198,6 @@ object TypeChecker {
                 }
             }
             case Bra(e) => getType(env, e)
-            case Assoc(op, exprs) => Left(NotImplemented())
             
             case x => Left(TypeError(s"cannot get the type of an expression of type ${x.getClass()}"))
         }

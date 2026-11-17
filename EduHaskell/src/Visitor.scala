@@ -66,7 +66,6 @@ trait ExprVisitor[T] { thisVisitor =>
   def visit(it: PartialFun): T
   def visit(it: Function): T
   def visit(it: Bra): T
-  def visit(it: Assoc): T
   // An ExprVisitor can be applied to an expression as if it were a function
   import Dispatch._
   @inline def apply(it: Expr): T = it.visit(thisVisitor)
@@ -127,7 +126,6 @@ object Dispatch {
           case it: PartialFun => v.visit(it)
           case it: Function => v.visit(it)
           case it: Bra => v.visit(it)
-          case it: Assoc => v.visit(it)
       }
   }
 
@@ -166,7 +164,6 @@ object Visitors {
     def visit(it: PartialFun): T = it
     def visit(it: Function): T = it
     def visit(it: Bra): T = it
-    def visit(it: Assoc): T = it
     def visit(it: DoubleDot): T = it
   }
 
@@ -185,7 +182,6 @@ object Visitors {
     }
     override def visit(it: Apply): Expr    =  { import it._; Apply(Detuple(l), Detuple(r)) }
     override def visit(it: Binop): Expr    =  { import it._; Binop(op, Detuple(l), Detuple(r)) }
-    override def visit(it: Assoc): Expr    =  { import it._; Assoc(op, exprs.map(Detuple(_))) }
     override def visit(it: Sequence): Expr =  Sequence(it.exprs.map(Detuple(_)))
     override def visit(it: ArithmeticSequence): Expr = { import it._; ArithmeticSequence(Detuple(start), next.map(Detuple(_)), end.map(Detuple(_))) }
     override def visit(it: SequenceComprehension): Expr = {
@@ -288,11 +284,6 @@ object Formatting {
         "(".text + (softNL + ExprFormat(it.e)).nest(2) + softNL + ")".text
 
     def visit(it: Op): Layout.Box = text(it.source)
-
-    def visit(it: Assoc): Layout.Box = {
-      val boxes = it.exprs.map(ExprFormat(_))           //(_.visit(ExprFormat))
-      text(it.op) <+> bracketed("(".t, boxes, ")".t)
-    }
 
     def visit(it: If): Layout.Box = {
       it.source.text
