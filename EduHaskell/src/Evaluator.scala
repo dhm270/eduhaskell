@@ -75,7 +75,7 @@ object Evaluator {
                                 val partialFuns = cases.map(f)
                                 val func = Function(partialFuns)
                                 lazy val newEnv: Environment = {
-                                    lazy val cont = Recursive(newEnv, func)
+                                    lazy val cont = Closure(newEnv, func)
                                     env.registerFunction(funcName)
                                     env.define(funcName, LazyValue(() => cont))
                                 }
@@ -92,7 +92,7 @@ object Evaluator {
         lhs match {
             case Id(name) => {
                 lazy val newEnv: Environment = {
-                    lazy val cont = Recursive(newEnv, rhs)
+                    lazy val cont = Closure(newEnv, rhs)
                     env.define(name, LazyValue(() => cont))
                 }
                 (newEnv, List(name))
@@ -108,7 +108,7 @@ object Evaluator {
                         }
                         val asPartialFun = createPartialFun(lhs, None, rhs)
                         lazy val newEnv: Environment = {
-                            lazy val cont = Recursive(newEnv, asPartialFun)
+                            lazy val cont = Closure(newEnv, asPartialFun)
                             env.registerFunction(funcName)
                             env.define(funcName, LazyValue(() => cont))
                         }
@@ -184,7 +184,7 @@ object Evaluator {
         lazy val newEnv: Environment = {
             lazy val alts: Seq[(Environment, Seq[String], PartialFun)] = defs.flatMap(defn => toAlts(newEnv, defn))
             lazy val function = FunctionWithClosures(alts)
-            lazy val cont = Recursive(newEnv, function)
+            lazy val cont = Closure(newEnv, function)
             env.registerFunction(name)
             env.define(name, LazyValue(() => cont))
         }
@@ -491,7 +491,7 @@ object Evaluator {
                         case p: PartialFun => e = FunctionWithClosures(List((newEnv, conflictingNames ++ newNames, p)))
                         case _ => {}
                     }
-                    (newEnv, newNames, Recursive(newEnv, e))
+                    (newEnv, newNames, Closure(newEnv, e))
                 } else {
                     (env, List(), Result(Left(PatternMatchError())))
                 }
@@ -503,11 +503,11 @@ object Evaluator {
     }
 
     sealed trait EvaluateContinuation
-    case class Recursive(env: Environment, e: Expr) extends EvaluateContinuation
+    case class Closure(env: Environment, e: Expr) extends EvaluateContinuation
     case class Result(result: Either[Error, Value]) extends EvaluateContinuation
 
     def evaluate(env: Environment, e: Expr): Either[Error, Value] = {
-        evaluate(Recursive(env, e))
+        evaluate(Closure(env, e))
     }
 
     def evaluate(cont: EvaluateContinuation): Either[Error, Value] = {
@@ -519,22 +519,29 @@ object Evaluator {
 
         // Try and use iteration rather than recursion where possible
         // to avoid stack overflow.
-        val rec = cont.asInstanceOf[Recursive]
-        var env = rec.env
-        var e = rec.e
-        while (true) {
+        val closure = cont.asInstanceOf[Closure]
+        var env = closure.env
+        var e = closure.e
+        var result: Option[Either[Error, Value]] = None
+
+        def handleCont(cont: EvaluateContinuation): Unit = {
+            cont match {
+                case Closure(env1, e1) => {
+                    env = env1
+                    e = e1
+                }
+                case Result(r) => {
+                    result = Some(r)
+                }
+            }
+        }
+
+        while (!result.isDefined) {
             e match {
                 case Op(name) => return Left(NotImplemented())
-                case Id(name) => {
-                    val continuation = env.find(name).get()
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
+                case Id(name) => handleCont(
+                    env.find(name).get()
+                )
 
                 case Num(value) => return Right(IntValue(value))
                 case Real(value) => return Right(RealValue(value))
@@ -545,84 +552,35 @@ object Evaluator {
                         e = exprs(0)
                     } else {
                         def evalAsLazyVal(e: Expr): LazyValue = {
-                            LazyValue(() => Recursive(env, e))
+                            LazyValue(() => Closure(env, e))
                         }
                         return Right(TupleValue(exprs.map(evalAsLazyVal(_))))
                     }
                 }
 
-                case Sequence(exprs) => {
-                    val continuation = evaluateSequence(env, exprs)
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
-                case ArithmeticSequence(start, next, end) => {
-                    val continuation = evaluateArithmeticSequence(env, start, next, end)
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
+                case Sequence(exprs) => handleCont(
+                    evaluateSequence(env, exprs)
+                )
+                case ArithmeticSequence(start, next, end) => handleCont(
+                    evaluateArithmeticSequence(env, start, next, end)
+                )
                 case DoubleDot() => return Left(SyntaxError("`..` cannot appear here"))
-                case SequenceComprehension(expr, qualifiers) => {
-                    val continuation = evaluateSequenceComprehension(env, List(), expr, qualifiers)
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
+                case SequenceComprehension(expr, qualifiers) => handleCont(
+                    evaluateSequenceComprehension(env, List(), expr, qualifiers)
+                )
 
-                case Binop(op, l, r) => {
-                    val continuation = evaluateBinop(env, op, l, r)
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
-                case Prefix(op, expr) => {
-                    val continuation = evaluatePrefix(env, op, expr)
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
-                case Apply(l, r) => {
-                    val continuation = evaluateApply(env, l, r)
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
-                case If(condition, trueExpr, falseExpr) => {
-                    val continuation = evaluateIf(env, condition, trueExpr, falseExpr)
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
+                case Binop(op, l, r) => handleCont(
+                    evaluateBinop(env, op, l, r)
+                )
+                case Prefix(op, expr) => handleCont(
+                    evaluatePrefix(env, op, expr)
+                )
+                case Apply(l, r) => handleCont(
+                    evaluateApply(env, l, r)
+                )
+                case If(condition, trueExpr, falseExpr) => handleCont(
+                    evaluateIf(env, condition, trueExpr, falseExpr)
+                )
 
                 case Case(query, alts) => return Left(NotImplemented())
 
@@ -643,34 +601,18 @@ object Evaluator {
                     }
                     return Right(FunctionValue(func))
                 }
-                case Function(alts) => {
-                    val continuation = evaluateFunction(env, alts)
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
-                case FunctionWithClosures(closureAlts) => {
-                    val continuation = evaluateFunctionWithClosures(closureAlts)
-                    continuation match {
-                        case Recursive(env1, e1) => {
-                            env = env1
-                            e = e1
-                        }
-                        case Result(r) => return r
-                    }
-                }
+                case Function(alts) => handleCont(
+                    evaluateFunction(env, alts)
+                )
+                case FunctionWithClosures(closureAlts) => handleCont(
+                    evaluateFunctionWithClosures(closureAlts)
+                )
 
-                case Bra(expr) => {
-                    e = expr
-                }
+                case Bra(expr) => e = expr
                 case Assoc(op, exprs) => return Left(NotImplemented())
             }
         }
-        Left(NotImplemented())
+        result.get
     }
 
     def stringToStringValue(str: String): Value = {
@@ -723,7 +665,7 @@ object Evaluator {
         } else {
             val head = exprs(0)
             val tail = exprs.drop(1)
-            Recursive(env, Binop(":", head, Sequence(tail)))
+            Closure(env, Binop(":", head, Sequence(tail)))
         }
     }
 
@@ -806,7 +748,7 @@ object Evaluator {
         // Recursively enumerate all items of the list.
         // That means we're OK with receiving no qualifiers (might be from a recursive call).
         if (qualifiers.length == 0) {
-            lazy val cont = Recursive(env, expr)
+            lazy val cont = Closure(env, expr)
             return Result(Right(ConsValue(
                 LazyValue(() => cont),
                 LazyValue(() => Result(Right(NilValue())))
@@ -1232,7 +1174,7 @@ object Evaluator {
         lValue match {
             case Right(FunctionValue(func)) => {
                 def f(): EvaluateContinuation = {
-                    Recursive(env, r)
+                    Closure(env, r)
                 }
                 func(LazyValue(f))
             }
@@ -1246,9 +1188,9 @@ object Evaluator {
         conditionValue match {
             case Right(BooleanValue(bool)) => {
                 if (bool) {
-                    Recursive(env, trueExpr)
+                    Closure(env, trueExpr)
                 } else {
-                    Recursive(env, falseExpr)
+                    Closure(env, falseExpr)
                 }
             }
             case Right(x) => Result(Left(TypeError(s"if-statement condition is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}")))
@@ -1288,7 +1230,7 @@ object Evaluator {
                     val matches = alts.foldLeft(x)(f)
                     // In the line below, `env` is a dummy value.
                     // The actual clause in `evaluate` doesn't use it.
-                    Recursive(env, FunctionWithClosures(matches))
+                    Closure(env, FunctionWithClosures(matches))
                 }
                 case (_, _, _) => {
                     // this is the last argument, so we will return a non-function
