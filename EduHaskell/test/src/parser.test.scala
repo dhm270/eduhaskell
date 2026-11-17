@@ -170,12 +170,6 @@ class ParserTests extends munit.FunSuite {
                     case _ => false
                 }
             }
-            case Assoc(op, exprs) => {
-                b match {
-                    case Assoc(op1, exprs1) => op == op1 && exprs.zip(exprs1).forall({ case (a, b) => structureMatches(a, b)} )
-                    case _ => false
-                }
-            }
 
             case Equation(lhs, rhs) => {
                 b match {

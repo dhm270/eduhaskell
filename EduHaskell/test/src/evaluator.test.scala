@@ -40,15 +40,19 @@ class EvaluatorTests extends munit.FunSuite {
     }
 
     def valuesEqualInEvaluator(l: Either[Error, Value], r: Either[Error, Value]): Boolean = {
-        val result = Evaluator.valuesEqual(l, r)
+        val result = Evaluator.evaluate(Evaluator.valuesEqual(l, r))
         result match {
             case Right(BooleanValue(b)) => b
             case _ => false
         }
     }
 
+    def ok(value: Value): Evaluator.EvaluateContinuation = {
+        Evaluator.Result(Right(value))
+    }
+
     def extend(env: Environment, ident: String, value: Value): Environment = {
-        env.define(ident, LazyValue(() => Right(value)))
+        env.define(ident, LazyValue(() => ok(value)))
     }
     
     test("Evaluate 1") {
@@ -115,7 +119,10 @@ class EvaluatorTests extends munit.FunSuite {
 
     test("Evaluate [1]") {
         val result = parseAndEvaluateWithoutExtraction("[1]")
-        val expectedResult = Right(ConsValue(LazyValue(() => Right(IntValue(1))), LazyValue(() => Right(NilValue()))))
+        val expectedResult = Right(ConsValue(
+            LazyValue(() => ok(IntValue(1))),
+            LazyValue(() => ok(NilValue()))
+        ))
         assert(valuesEqualInEvaluator(result, expectedResult))
     }
 
@@ -123,14 +130,14 @@ class EvaluatorTests extends munit.FunSuite {
         val result = parseAndEvaluateWithoutExtraction("[1..3]")
         val expectedResult = Right(
             ConsValue(
-                LazyValue(() => Right(IntValue(1))),
-                LazyValue(() => Right(
+                LazyValue(() => ok(IntValue(1))),
+                LazyValue(() => ok(
                     ConsValue(
-                        LazyValue(() => Right(IntValue(2))),
-                        LazyValue(() => Right(
+                        LazyValue(() => ok(IntValue(2))),
+                        LazyValue(() => ok(
                             ConsValue(
-                                LazyValue(() => Right(IntValue(3))),
-                                LazyValue(() => Right(NilValue()))
+                                LazyValue(() => ok(IntValue(3))),
+                                LazyValue(() => ok(NilValue()))
                             )
                         ))
                     )
@@ -209,14 +216,14 @@ class EvaluatorTests extends munit.FunSuite {
         )
         val expectedResult = Right(
             ConsValue(
-                LazyValue(() => Right(IntValue(2))),
-                LazyValue(() => Right(
+                LazyValue(() => ok(IntValue(2))),
+                LazyValue(() => ok(
                     ConsValue(
-                        LazyValue(() => Right(IntValue(4))),
-                        LazyValue(() => Right(
+                        LazyValue(() => ok(IntValue(4))),
+                        LazyValue(() => ok(
                             ConsValue(
-                                LazyValue(() => Right(IntValue(6))),
-                                LazyValue(() => Right(NilValue()))
+                                LazyValue(() => ok(IntValue(6))),
+                                LazyValue(() => ok(NilValue()))
                             )
                         ))
                     )
