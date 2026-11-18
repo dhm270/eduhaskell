@@ -23,6 +23,14 @@ class TypeCheckerTests extends munit.FunSuite {
     def f(t1: Type, t2: Type): Type = FunctionType(t1, t2)
     def g(name: String): Type = GenericType(name)
 
+    def int(): Type = IntegerType()
+    def real(): Type = RealType()
+    def char(): Type = CharacterType()
+    def bool(): Type = BooleanType()
+    
+    def tuple(subtypes: Seq[Type]): Type = TupleType(subtypes)
+    def seq(subtype: Type): Type = SequenceType(subtype)
+
     test("Unify a and a") {
         // a
         val t1 = g("a")
@@ -43,7 +51,7 @@ class TypeCheckerTests extends munit.FunSuite {
         assertUnification(t1, t2, exp)
     }
 
-    test("Unify a and a -> b") {
+    test("Fail to unify a and a -> b") {
         // a
         val t1 = g("a")
         // a -> b
@@ -195,7 +203,7 @@ class TypeCheckerTests extends munit.FunSuite {
         assertUnification(t1, t2, exp)
     }
 
-    test("Unify a and a -> b") {
+    test("Fail to unify a and a -> b") {
         // a
         val t1 = g("a")
         // a -> b
@@ -203,7 +211,7 @@ class TypeCheckerTests extends munit.FunSuite {
         assertUnificationFails(t1, t2)
     }
 
-    test("Unify a -> b and b -> a -> c") {
+    test("Fail to unify a -> b and b -> a -> c") {
         // a -> b
         val t1 = f(g("a"), g("b"))
         // b -> a -> c
@@ -214,7 +222,7 @@ class TypeCheckerTests extends munit.FunSuite {
         assertUnificationFails(t1, t2)
     }
 
-    test("Unify (a -> b) -> a and c -> c") {
+    test("Fail to unify (a -> b) -> a and c -> c") {
         // (a -> b) -> a
         val t1 = f(
             f(g("a"), g("b")),
@@ -225,7 +233,7 @@ class TypeCheckerTests extends munit.FunSuite {
         assertUnificationFails(t1, t2)
     }
 
-    test("Unify a -> b -> a and (c -> c) -> b") {
+    test("Fail to unify a -> b -> a and (c -> c) -> b") {
         // a -> b -> a
         val t1 = f(
             g("a"),
@@ -264,6 +272,246 @@ class TypeCheckerTests extends munit.FunSuite {
                 g("c")
             )
         )
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Unify a -> Integer and Boolean -> b") {
+        // a -> Integer
+        val t1 = f(g("a"), int())
+        // Boolean -> b
+        val t2 = f(bool(), g("b"))
+        // Boolean -> Integer
+        val exp = f(bool(), int())
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Unify a -> b -> c and Integer -> Real -> Character") {
+        // a -> b -> c
+        val t1 = f(
+            g("a"),
+            f(g("b"), g("c"))
+        )
+        // Integer -> Real -> Character
+        val t2 = f(
+            int(),
+            f(real(), char())
+        )
+        // Integer -> Real -> Character
+        val exp = f(
+            int(),
+            f(real(), char())
+        )
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Fail to unify Integer -> a and Real -> Boolean") {
+        // Integer -> a
+        val t1 = f(int(), g("a"))
+        // Real -> Boolean
+        val t2 = f(real(), bool())
+        assertUnificationFails(t1, t2)
+    }
+
+    test("Fail to unify a -> a and Integer -> Boolean") {
+        // a -> a
+        val t1 = f(g("a"), g("a"))
+        // Integer -> Boolean
+        val t2 = f(int(), bool())
+        assertUnificationFails(t1, t2)
+    }
+
+    test("Unify (a, Integer, b) and (Boolean, c, Real)") {
+        // (a, Integer, b)
+        val t1 = tuple(List(
+            g("a"), int(), g("b")
+        ))
+        // (Boolean, c, Real)
+        val t2 = tuple(List(
+            bool(), g("c"), real()
+        ))
+        // (Boolean, Integer, Real)
+        val exp = tuple(List(
+            bool(), int(), real()
+        ))
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Unify (a, a, b) and (Integer, c, Boolean)") {
+        // (a, a, b)
+        val t1 = tuple(List(
+            g("a"), g("a"), g("b")
+        ))
+        // (Integer, c, Boolean)
+        val t2 = tuple(List(
+            int(), g("c"), bool()
+        ))
+        // (Integer, Integer, Boolean)
+        val exp = tuple(List(
+            int(), int(), bool()
+        ))
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Fail to unify (a, b) and (Integer, Boolean, Character)") {
+        // (a, b)
+        val t1 = tuple(List(
+            g("a"), g("b")
+        ))
+        // (Integer, Boolean, Character)
+        val t2 = tuple(List(
+            int(), bool(), char()
+        ))
+        assertUnificationFails(t1, t2)
+    }
+
+    test("Unify (a, (b, c), d) and ((Integer, Boolean), (Real, c), Character)") {
+        // (a, (b, c), d)
+        val t1 = tuple(List(
+            g("a"),
+            tuple(List(g("b"), g("c"))),
+            g("d")
+        ))
+        // ((Integer, Boolean), (Real, e), Character)
+        val t2 = tuple(List(
+            tuple(List(int(), bool())),
+            tuple(List(real(), g("c"))),
+            char()
+        ))
+        // ((Integer, Boolean), (Real, c), Character)
+        val exp = tuple(List(
+            tuple(List(int(), bool())),
+            tuple(List(real(), g("c"))),
+            char()
+        ))
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Unify [a] and [Integer]") {
+        // [a]
+        val t1 = seq(g("a"))
+        // [Integer]
+        val t2 = seq(int())
+        // [Integer]
+        val exp = seq(int())
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Unify [[a]] and [[Boolean]]") {
+        // [[a]]
+        val t1 = seq(seq(g("a")))
+        // [[Boolean]]
+        val t2 = seq(seq(bool()))
+        // [[Boolean]]
+        val exp = seq(seq(bool()))
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Fail to unify [Integer] and [Real]") {
+        // [Integer]
+        val t1 = seq(int())
+        // [Real]
+        val t2 = seq(real())
+        assertUnificationFails(t1, t2)
+    }
+
+    test("Unify a -> [a] and [Integer] -> b") {
+        // a -> [a]
+        val t1 = f(
+            g("a"),
+            seq(g("a"))
+        )
+        // [Integer] -> b
+        val t2 = f(
+            seq(int()),
+            g("b")
+        )
+        // [Integer] -> [[Integer]]
+        val exp = f(
+            seq(int()),
+            seq(seq(int()))
+        )
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Unify [(a, b)] and [(Integer, Boolean)]") {
+        // [(a, b)]
+        val t1 = seq(
+            tuple(List(g("a"), g("b")))
+        )
+        // [(Integer, Boolean)]
+        val t2 = seq(
+            tuple(List(int(), bool()))
+        )
+        // [(Integer, Boolean)]
+        val exp = seq(
+            tuple(List(int(), bool()))
+        )
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Fail to unify [a] and (Integer, Boolean)") {
+        // [a]
+        val t1 = seq(g("a"))
+        // (Integer, Boolean)
+        val t2 = tuple(List(
+            int(), bool()
+        ))
+        assertUnificationFails(t1, t2)
+    }
+
+    test("Unify (a, b) -> [a] and (Integer, Boolean) -> c") {
+        // (a, b) -> [a]
+        val t1 = f(
+            tuple(List(g("a"), g("b"))),
+            seq(g("a"))
+        )
+        // (Integer, Boolean) -> c
+        val t2 = f(
+            tuple(List(int(), bool())),
+            g("c")
+        )
+        // (Integer, Boolean) -> [Integer]
+        val exp = f(
+            tuple(List(int(), bool())),
+            seq(int())
+        )
+        assertUnification(t1, t2, exp)
+    }
+
+    test("Fail to unify a and [a]") {
+        // a
+        val t1 = g("a")
+        // [a]
+        val t2 = seq(g("a"))
+        assertUnificationFails(t1, t2)
+    }
+
+    test("Fail to unify a and (Integer, a)") {
+        // a
+        val t1 = g("a")
+        // (Integer, a)
+        val t2 = tuple(List(
+            int(), g("a")
+        ))
+        assertUnificationFails(t1, t2)
+    }
+
+    test("Unify ([a], b -> c) and (d, Integer -> [a])") {
+        // ([a], b -> c)
+        val t1 = tuple(List(
+            seq(g("a")),
+            f(g("b"), g("c"))
+        ))
+        // (d, Integer -> [a])
+        val t2 = tuple(List(
+            g("d"),
+            f(int(), seq(g("a")))
+        ))
+        // ([a], Integer -> [a])
+        val exp = tuple(List(
+            seq(g("a")),
+            f(int(), seq(g("a")))
+        ))
         assertUnification(t1, t2, exp)
     }
 }
