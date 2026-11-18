@@ -157,15 +157,27 @@ object RunEduHaskell {
                     }
                     if (instruction.isInstanceOf[Expr]) {
                         val expr = instruction.asInstanceOf[Expr]
-                        val result = Evaluator.evaluate(replEnv, expr)
-                        result match {
-                            case Right(r) => {
-                                print("= ")
-                                LazyValue.lazyPrint(r)
-                                println()
+                        val _type = TypeChecker.getType(replEnv, expr)
+                        _type match {
+                            case Right(_) | Left(NotImplemented()) => {
+                                // If the type error is just that we haven't implemented type
+                                // checking for this kind of expression yet, then we can still
+                                // go ahead and run it. We have to assume that it's fine.
+                                val result = Evaluator.evaluate(replEnv, expr)
+                                result match {
+                                    case Right(r) => {
+                                        print("= ")
+                                        LazyValue.lazyPrint(r)
+                                        println()
+                                    }
+                                    case Left(e) => {
+                                        print("! ")
+                                        println(e.message)
+                                    }
+                                }
                             }
                             case Left(e) => {
-                                print("! ")
+                                print("! Error while type-checking: ")
                                 println(e.message)
                             }
                         }
