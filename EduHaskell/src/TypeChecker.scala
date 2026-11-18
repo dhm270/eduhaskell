@@ -268,10 +268,10 @@ object TypeChecker {
             case Right(f @ FunctionType(argument, output)) => {
                 rType match {
                     case Right(t) => {
-                        if (argument == t) {
-                            Right(output)
-                        } else {
-                            Left(TypeError(s"cannot call a function of type ${f.source} with an argument of type ${t.source}"))
+                        val unificationResult = unify(argument, t)
+                        unificationResult match {
+                            case Right((unifiedType, subst)) => Right(output.substitute(subst))
+                            case Left(_) => Left(TypeError(s"cannot call a function of type ${f.source} with an argument of type ${t.source}"))
                         }
                     }
                     case x => x
@@ -357,6 +357,8 @@ object TypeChecker {
             case TupleType(subtypesA) => {
                 b match {
                     case TupleType(subtypesB) => {
+                        if (subtypesA.length != subtypesB.length) return Left(TypeError(s"${a.source} and ${b.source} are tuple types of different arities, so are not unifiable"))
+
                         var subst: Substitution = List()
                         def addToSubst(subst1: Substitution): Unit = {
                             subst = unionSubstitutions(subst, subst1)
