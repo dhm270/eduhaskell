@@ -128,7 +128,7 @@
                     if (NEWLINE.isDefined) NEWLINE.get else next()
 
                 case c if c.isWhitespace =>
-                    while (hasChar && theChar.isWhitespace) nextChar()
+                    while (hasChar && theChar.isWhitespace && theChar != '\n') nextChar()
                     if (hasChar) next() else ENDSTREAM
 
                 case '{' => // ScalaLR gets a bit confused because of the open bracket in this line. So we need this to fix it: }
