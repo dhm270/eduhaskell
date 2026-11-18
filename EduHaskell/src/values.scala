@@ -1,9 +1,14 @@
 package eduhaskell
 
 import eduhaskell.syntax._
+import eduhaskell.errors._
 import eduhaskell.Evaluator
 
 object values {
+    sealed trait EvaluateContinuation
+    case class Closure(env: Environment, e: Expr) extends EvaluateContinuation
+    case class Result(result: Either[Error, Value]) extends EvaluateContinuation
+
     trait Value {
         val eagerSource: String
         override lazy val toString: String = eagerSource
@@ -34,7 +39,7 @@ object values {
         override def getType(): String = "Boolean"
     }
 
-    case class FunctionValue(func: LazyValue => Evaluator.EvaluateContinuation) extends Value {
+    case class FunctionValue(func: LazyValue => EvaluateContinuation) extends Value {
         lazy val eagerSource = "<function value>"
         override def getType(): String = "Function" // TODO: better type
     }
@@ -54,7 +59,7 @@ object values {
         override def getType(): String = "Tuple" // TODO: better type
     }
 
-    case class LazyValue(private var getter: () => Evaluator.EvaluateContinuation) {
+    case class LazyValue(private var getter: () => EvaluateContinuation) {
         lazy val eagerSource: String = {
             val got = this.getter()
             Evaluator.evaluate(got) match {
@@ -63,12 +68,12 @@ object values {
             }
         }
 
-        def get(): Evaluator.EvaluateContinuation = this.getter()
+        def get(): EvaluateContinuation = this.getter()
     }
 
     object LazyValue {
         def lazyPrint(v: Value): Unit = {
-            this.lazyPrint(LazyValue(() => Evaluator.Result(Right(v))))
+            this.lazyPrint(LazyValue(() => Result(Right(v))))
         }
 
         def lazyPrint(lv: LazyValue): Unit = {

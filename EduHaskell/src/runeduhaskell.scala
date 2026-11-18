@@ -8,11 +8,13 @@ import org.sufrin.utility.PrettyPrint._
 
 import eduhaskell.Components
 import eduhaskell.Scanner._
-import eduhaskell.Evaluator
-import eduhaskell.Environment
 import eduhaskell.values._
 import eduhaskell.syntax._
 import eduhaskell.errors._
+
+import eduhaskell.Evaluator
+import eduhaskell.Environment
+import eduhaskell.TypeChecker
 
 import LRParser._
 
@@ -124,7 +126,7 @@ object RunEduHaskell {
             }
         }
 
-        Evaluator.parseAllDefinitions(Environment.empty, definitions)
+        Environment.empty.parseAllDefinitions(definitions)
     }
 
     def repl(initialReplEnv: Environment): Unit = {
@@ -154,7 +156,8 @@ object RunEduHaskell {
                         translate(instruction.asInstanceOf[TREE]).prettyPrint()
                     }
                     if (instruction.isInstanceOf[Expr]) {
-                        val result = Evaluator.evaluate(replEnv, instruction.asInstanceOf[Expr])
+                        val expr = instruction.asInstanceOf[Expr]
+                        val result = Evaluator.evaluate(replEnv, expr)
                         result match {
                             case Right(r) => {
                                 print("= ")
@@ -167,7 +170,7 @@ object RunEduHaskell {
                             }
                         }
                     } else if (instruction.isInstanceOf[Definition]) {
-                        val extendedEnvironment = Evaluator.withDefinition(replEnv, instruction.asInstanceOf[Definition])
+                        val extendedEnvironment = replEnv.withDefinition(instruction.asInstanceOf[Definition])
                         extendedEnvironment match {
                             case Right((newEnv, names)) => replEnv = newEnv
                             case Left(e) => {

@@ -6,256 +6,6 @@ import eduhaskell.values._
 import eduhaskell.Environment
 
 object Evaluator {
-    def withDefinition(env: Environment, defn: Definition): Either[Error, (Environment, Seq[String])] = {
-        defn match {
-            case Equation(lhs, rhs) => Right(withEquationDefinition(env, lhs, rhs))
-            case WhereEquation(lhs, rhs, defs) => {
-                val extendedEnvironment = withDefinitions(env, defs)
-                extendedEnvironment match {
-                    case Right((newEnv, names)) => {
-                        val result = withEquationDefinition(newEnv, lhs, rhs)
-                        result match {
-                            case (newEnv1, names1) => Right((newEnv1, names ++ names1))
-                        }
-                    }
-                    case x => x
-                }
-            }
-            case GuardedEquation(lhs, cases, defs) => {
-                lhs match {
-                    case Id(name) => {
-                        def f(acc: Either[Error, (Environment, Seq[String])], curr: GuardedResult): Either[Error, (Environment, Seq[String])] = {
-                            acc match {
-                                case Right(_) => acc
-                                case Left(PatternMatchError()) => {
-                                    curr match {
-                                        case GuardedResult(guard, expr) => {
-                                            val result = evaluate(env, guard)
-                                            result match {
-                                                case Right(BooleanValue(true)) => {
-                                                    val extendedEnvironment = withDefinitions(env, defs)
-                                                    extendedEnvironment match {
-                                                        case Right((env, names)) => {
-                                                            val result = withEquationDefinition(env, lhs, expr)
-                                                            result match {
-                                                                case (env1, names1) => Right((env1, names ++ names1))
-                                                            }
-                                                        }
-                                                        case x => x
-                                                    }
-                                                }
-                                                case Right(BooleanValue(false)) => acc
-                                                case Right(_) => Left(PatternMatchError())
-                                                case Left(_) => result.asInstanceOf[Either[Error, (Environment, Seq[String])]]
-                                            }
-                                        }
-                                    }
-                                }
-                                case Left(_) => acc
-                            }
-                        }
-                        val x: Either[Error, (Environment, Seq[String])] = Left(PatternMatchError())
-                        cases.foldLeft(x)(f)
-                    }
-                    case Apply(l, r) => {
-                        val exprs = flattenApply(lhs)
-                        exprs(0) match {
-                            case Id(funcName) => {
-                                if (env.isFunctionInScope(funcName)) {
-                                    // If the function is already defined, then we want to warn the user that they have
-                                    // redefined an existing function rather than extending it.
-                                    println(s"% Warning: existing function definition for ${funcName} overwritten rather than extended") // TODO: handle this better
-                                }
-                                def f(_case: GuardedResult): PartialFun = {
-                                    _case match {
-                                        case GuardedResult(guard, expr) => {
-                                            createPartialFun(lhs, Some(guard), expr)
-                                        }
-                                    }
-                                }
-                                val partialFuns = cases.map(f)
-                                val func = Function(partialFuns)
-                                lazy val newEnv: Environment = {
-                                    lazy val cont = Closure(newEnv, func)
-                                    env.registerFunction(funcName)
-                                    env.define(funcName, LazyValue(() => cont))
-                                }
-                                Right((newEnv, List(funcName)))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    def withEquationDefinition(env: Environment, lhs: Expr, rhs: Expr): (Environment, Seq[String]) = {
-        lhs match {
-            case Id(name) => {
-                lazy val newEnv: Environment = {
-                    lazy val cont = Closure(newEnv, rhs)
-                    env.define(name, LazyValue(() => cont))
-                }
-                (newEnv, List(name))
-            }
-            case Apply(l, r) => {
-                val exprs = flattenApply(lhs)
-                exprs(0) match {
-                    case Id(funcName) => {
-                        if (env.isFunctionInScope(funcName)) {
-                            // If the function is already defined, then we want to warn the user that they have
-                            // redefined an existing function rather than extending it.
-                            println(s"% Warning: existing function definition for ${funcName} overwritten rather than extended") // TODO: handle this better
-                        }
-                        val asPartialFun = createPartialFun(lhs, None, rhs)
-                        lazy val newEnv: Environment = {
-                            lazy val cont = Closure(newEnv, asPartialFun)
-                            env.registerFunction(funcName)
-                            env.define(funcName, LazyValue(() => cont))
-                        }
-                        (newEnv, List(funcName))
-                    }
-                }
-            }
-        }
-    }
-
-    def withDefinitions(env: Environment, defs: Seq[Definition]): Either[Error, (Environment, Seq[String])] = {
-        def f(acc: Either[Error, (Environment, Seq[String])], curr: Definition): Either[Error, (Environment, Seq[String])] = {
-            acc match {
-                case Right((env, names)) => {
-                    val result = withDefinition(env, curr)
-                    result match {
-                        case Right((env1, names1)) => Right((env1, names ++ names1))
-                        case x => x
-                    }
-                }
-                case _ => acc
-            }
-        }
-        val x: Either[Error, (Environment, Seq[String])] = Right((env, List()))
-        defs.foldLeft(x)(f)
-    }
-
-    def withMultilineDefinition(env: Environment, name: String, defs: List[Definition]): Either[Error, (Environment, Seq[String])] = {
-        // Check if we're just defining a regular value, or a function
-        defs(0) match {
-            case Equation(Id(name), _) => {
-                // i.e. something like `x = 1` (rather than e.g. `f x = 1`)
-                if (defs.length == 1) {
-                    return withDefinition(env, defs(0))
-                } else {
-                    return Left(ModuleLoadError(s"multiple definitions for ${name}"))
-                }
-            }
-            case _ => {}
-        }
-
-        // If we've got here, then we have a function definition
-        def toAlts(env: Environment, defn: Definition): Seq[(Environment, Seq[String], PartialFun)] = {
-            defn match {
-                case Equation(lhs, rhs) => List((env, List(), createPartialFun(lhs, None, rhs)))
-                case WhereEquation(lhs, rhs, defs) => {
-                    val extendedEnvironment = withDefinitions(env, defs)
-                    extendedEnvironment match {
-                        case Right((newEnv, names)) => List((newEnv, names, createPartialFun(lhs, None, rhs)))
-                        case x => List() // TODO: fix
-                    }
-                }
-                case GuardedEquation(lhs, cases, defs) => {
-                    val exprs = flattenApply(lhs)
-                    def f(_case: GuardedResult): PartialFun = {
-                        _case match {
-                            case GuardedResult(guard, expr) => {
-                                createPartialFun(lhs, Some(guard), expr)
-                            }
-                        }
-                    }
-                    val extendedEnvironment = withDefinitions(env, defs)
-                    extendedEnvironment match {
-                        case Right((env, names)) => {
-                            val partialFuns = cases.map(f)
-                            partialFuns.map(p => (env, names, p))
-                        }
-                        case x => List() // TODO: fix
-                    }
-                }
-            }
-        }
-        lazy val newEnv: Environment = {
-            lazy val alts: Seq[(Environment, Seq[String], PartialFun)] = defs.flatMap(defn => toAlts(newEnv, defn))
-            lazy val function = FunctionWithClosures(alts)
-            lazy val cont = Closure(newEnv, function)
-            env.registerFunction(name)
-            env.define(name, LazyValue(() => cont))
-        }
-        Right((newEnv, List(name)))
-    }
-
-    def parseAllDefinitions(env: Environment, defs: List[Definition]): Either[Error, (Environment, Seq[String])] = {
-        def getNameFromLhsExpr(lhs: Expr): String = {
-            lhs match {
-                case Apply(l, r) => getNameFromLhsExpr(l)
-                case Id(name) => name
-            }
-        }
-
-        val defsByName: collection.mutable.Map[String, List[Definition]] = collection.mutable.Map()
-
-        var currentName = ""
-        var currentDefs: List[Definition] = List()
-
-        var duplicatedName: Option[String] = None
-
-        def f(defn: Definition, lhs: Expr): Unit = {
-            val name = getNameFromLhsExpr(lhs)
-            if (name == currentName) {
-                currentDefs = defn :: currentDefs
-            } else {
-                if (currentDefs.length > 0) defsByName(currentName) = currentDefs
-                currentDefs = List(defn)
-                if (defsByName.isDefinedAt(name) && !duplicatedName.isDefined) {
-                    duplicatedName = Some(name)
-                }
-                currentName = name
-            }
-        }
-
-        defs.foreach(defn => {
-            defn match {
-                case Equation(lhs, _) => f(defn, lhs)
-                case GuardedEquation(pattern, _, _) => f(defn, pattern)
-                case WhereEquation(lhs, _, _) => f(defn, lhs)
-                case _ => {}
-            }
-        })
-
-        if (currentDefs.length > 0) defsByName(currentName) = currentDefs
-
-        if (duplicatedName.isDefined) {
-            Left(ModuleHasDuplicatedDefinitionsError(duplicatedName.get))
-        } else {
-            def f(acc: Either[Error, (Environment, Seq[String])], curr: (String, List[Definition])): Either[Error, (Environment, Seq[String])] = {
-                acc match {
-                    case Right((env, names)) => {
-                        curr match {
-                            case (name, defs) => {
-                                val result = withMultilineDefinition(env, name, defs)
-                                result match {
-                                    case Right((env1, names1)) => Right(env1, names ++ names1)
-                                    case x => x
-                                }
-                            }
-                        }
-                    }
-                    case _ => acc
-                }
-            }
-            val x: Either[Error, (Environment, Seq[String])] = Right((env, List()))
-            defsByName.keys.map(key => (key, defsByName(key))).foldLeft(x)(f)
-        }
-    }
-
     def getLeftmostArgument(e: Expr): Expr = {
         e match {
             case Apply(l @ Apply(_, _), r) => getLeftmostArgument(l)
@@ -273,15 +23,6 @@ object Evaluator {
     def createPartialFun(lhs: Expr, guard: Option[Expr], rhs: Expr): PartialFun = {
         val editedLhs = removeLeftmostArgument(lhs)
         PartialFun(editedLhs, guard, rhs)
-    }
-
-    def flattenApply(e: Expr): List[Expr] = {
-        e match {
-            case Apply(l, r) => {
-                flattenApply(l) ++ List(r)
-            }
-            case _ => List(e)
-        }
     }
 
     def matchAndExtendEnvironment(env: Environment, conflictingNames: Seq[String], pattern: Expr, comparison: LazyValue): Either[Error, (Environment, Seq[String])] = {
@@ -503,10 +244,6 @@ object Evaluator {
         }
     }
 
-    sealed trait EvaluateContinuation
-    case class Closure(env: Environment, e: Expr) extends EvaluateContinuation
-    case class Result(result: Either[Error, Value]) extends EvaluateContinuation
-
     def evaluate(env: Environment, e: Expr): Either[Error, Value] = {
         evaluate(Closure(env, e))
     }
@@ -586,7 +323,7 @@ object Evaluator {
                 case Case(query, alts) => return Left(NotImplemented())
 
                 case Where(expr, defs) => {
-                    val extendedEnvironment = withDefinitions(env, defs)
+                    val extendedEnvironment = env.withDefinitions(defs)
                     extendedEnvironment match {
                         case Right((newEnv, names)) => {
                             env = newEnv
@@ -797,7 +534,7 @@ object Evaluator {
                 Result(generateOver(evaluate(env, generatorExpr)))
             }
             case SequenceComprehensionDefinition(defn) => {
-                val extendedEnvironment = withDefinition(env, defn)
+                val extendedEnvironment = env.withDefinition(defn)
                 extendedEnvironment match {
                     case Right((newEnv, names)) => {
                         if (conflictingNames.intersect(names).length == 0) {

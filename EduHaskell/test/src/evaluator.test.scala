@@ -49,8 +49,8 @@ class EvaluatorTests extends munit.FunSuite {
         }
     }
 
-    def ok(value: Value): Evaluator.EvaluateContinuation = {
-        Evaluator.Result(Right(value))
+    def ok(value: Value): EvaluateContinuation = {
+        Result(Right(value))
     }
 
     def extend(env: Environment, ident: String, value: Value): Environment = {
