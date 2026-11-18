@@ -5,38 +5,6 @@ import eduhaskell.errors._
 import eduhaskell.types._
 
 object TypeChecker {
-    def getFirstError[A](types: Seq[Either[Error, A]]): Either[Error, A] = {
-        def f(acc: Either[Error, A], curr: Either[Error, A]): Either[Error, A] = {
-            acc match {
-                case Left(_) => acc
-                case Right(_) => {
-                    curr match {
-                        case Left(_) => curr
-                        case Right(_) => acc
-                    }
-                }
-            }
-        }
-        types.reduceLeft(f)
-    }
-
-    def ifNoTypeErrors[A](unextractedTypes: Seq[Either[Error, A]], callback: Seq[A] => Either[Error, A]): Either[Error, A] = {
-        val firstTypeError = getFirstError(unextractedTypes)
-        firstTypeError match {
-            case Right(_) => {
-                // i.e. no type errors were found
-                def extract(x: Either[Error, A]): A = {
-                    x match {
-                        case Right(_type) => _type
-                    }
-                }
-                val extractedTypes = unextractedTypes.map(extract)
-                callback(extractedTypes)
-            }
-            case Left(_) => firstTypeError
-        }
-    }
-
     def getType(env: Environment, e: Expr): Either[Error, Type] = {
         e match {
             case Op(name) => Left(NotImplemented())

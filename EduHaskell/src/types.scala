@@ -1,6 +1,41 @@
 package eduhaskell
 
+import eduhaskell.errors._
+import eduhaskell.syntax._
+
 object types {
+    def getFirstError[A](types: Seq[Either[Error, A]]): Either[Error, A] = {
+        def f(acc: Either[Error, A], curr: Either[Error, A]): Either[Error, A] = {
+            acc match {
+                case Left(_) => acc
+                case Right(_) => {
+                    curr match {
+                        case Left(_) => curr
+                        case Right(_) => acc
+                    }
+                }
+            }
+        }
+        types.reduceLeft(f)
+    }
+
+    def ifNoTypeErrors[A](unextractedTypes: Seq[Either[Error, A]], callback: Seq[A] => Either[Error, A]): Either[Error, A] = {
+        val firstTypeError = getFirstError(unextractedTypes)
+        firstTypeError match {
+            case Right(_) => {
+                // i.e. no type errors were found
+                def extract(x: Either[Error, A]): A = {
+                    x match {
+                        case Right(_type) => _type
+                    }
+                }
+                val extractedTypes = unextractedTypes.map(extract)
+                callback(extractedTypes)
+            }
+            case Left(_) => firstTypeError
+        }
+    }
+
     type Substitution = Seq[(String, Type)]
 
     trait Type {
@@ -85,6 +120,50 @@ object types {
                 i += 1
             }
             t
+        }
+    }
+
+    object Type {
+        def syntaxToType(e: Expr): Either[Error, Type] = {
+            e match {
+                case Id(name) => {
+                    name match {
+                        case "Integer" => Right(IntegerType())
+                        case "Real" => Right(RealType())
+                        case "Character" => Right(CharacterType())
+                        case "Boolean" => Right(BooleanType())
+                        case _ => Right(GenericType(name))
+                    }
+                }
+                case Tuple(exprs) => {
+                    if (exprs.length == 1) {
+                        syntaxToType(exprs(0))
+                    } else {
+                        val subtypes = exprs.map(syntaxToType)
+                        ifNoTypeErrors[Type](subtypes, subtypesExtracted => Right(TupleType(subtypesExtracted)))
+                    }
+                }
+                case Sequence(exprs) => {
+                    if (exprs.length == 1) {
+                        val subtypes = exprs.map(syntaxToType)
+                        ifNoTypeErrors[Type](subtypes, subtypesExtracted => Right(SequenceType(subtypesExtracted(0))))
+                    } else {
+                        Left(SyntaxError(s"${exprs.mkString("[", ", ", "]")} does not define a valid type"))
+                    }
+                }
+                case Binop("->", l, r) => {
+                    val leftSubtype = syntaxToType(l)
+                    val rightSubtype = syntaxToType(r)
+                    ifNoTypeErrors[Type](
+                        List(leftSubtype, rightSubtype),
+                        subtypesExtracted => {
+                            Right(FunctionType(subtypesExtracted(0), subtypesExtracted(1)))
+                        }
+                    )
+                }
+                case Bra(expr) => syntaxToType(expr)
+                case _ => Left(SyntaxError(s"${e} does not define a valid type"))
+            }
         }
     }
 }
