@@ -2,6 +2,7 @@ package eduhaskell
 
 import eduhaskell.syntax._
 import eduhaskell.errors._
+import eduhaskell.values._
 import eduhaskell.Environment
 
 object Evaluator {

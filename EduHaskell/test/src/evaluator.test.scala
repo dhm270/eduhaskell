@@ -7,6 +7,8 @@ import LRParser._
 import eduhaskell.errors._
 import eduhaskell.Scanner._
 import eduhaskell.syntax._
+import eduhaskell.values._
+
 import eduhaskell.Evaluator
 
 class EvaluatorTests extends munit.FunSuite {

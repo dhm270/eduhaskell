@@ -10,7 +10,7 @@ import eduhaskell.Components
 import eduhaskell.Scanner._
 import eduhaskell.Evaluator
 import eduhaskell.Environment
-import eduhaskell.LazyValue
+import eduhaskell.values._
 import eduhaskell.syntax._
 import eduhaskell.errors._
 
