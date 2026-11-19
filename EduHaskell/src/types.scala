@@ -19,8 +19,8 @@ object types {
         types.reduceLeft(f)
     }
 
-    def ifNoTypeErrors[A](unextractedTypes: Seq[Either[Error, A]], callback: Seq[A] => Either[Error, A]): Either[Error, A] = {
-        val firstTypeError = getFirstError(unextractedTypes)
+    def ifNoTypeErrorsMulti[A, B](unextractedTypes: Seq[Either[Error, A]], callback: Seq[A] => Either[Error, B]): Either[Error, B] = {
+        val firstTypeError = getFirstError[A](unextractedTypes)
         firstTypeError match {
             case Right(_) => {
                 // i.e. no type errors were found
@@ -32,8 +32,20 @@ object types {
                 val extractedTypes = unextractedTypes.map(extract)
                 callback(extractedTypes)
             }
-            case Left(_) => firstTypeError
+            case Left(_) => firstTypeError.asInstanceOf[Either[Error, B]]
         }
+    }
+
+    def ifNoTypeErrorMulti[A, B](unextractedType: Either[Error, A], callback: A => Either[Error, B]): Either[Error, B] = {
+        ifNoTypeErrorsMulti[A, B](List(unextractedType), seq => callback(seq(0)))
+    }
+
+    def ifNoTypeErrors[A](unextractedTypes: Seq[Either[Error, A]], callback: Seq[A] => Either[Error, A]): Either[Error, A] = {
+        ifNoTypeErrorsMulti[A, A](unextractedTypes, callback)
+    }
+
+    def ifNoTypeError[A](unextractedType: Either[Error, A], callback: A => Either[Error, A]): Either[Error, A] = {
+        ifNoTypeErrors[A](List(unextractedType), seq => callback(seq(0)))
     }
 
     type Substitution = Seq[(String, Type)]

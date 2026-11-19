@@ -105,7 +105,7 @@ class Environment(private val map: Map[String, LazyValue], private var functions
                                 def f(_case: GuardedResult): PartialFun = {
                                     _case match {
                                         case GuardedResult(guard, expr) => {
-                                            Evaluator.createPartialFun(lhs, Some(guard), expr)
+                                            createPartialFun(lhs, Some(guard), expr)
                                         }
                                     }
                                 }
@@ -143,7 +143,7 @@ class Environment(private val map: Map[String, LazyValue], private var functions
                             // redefined an existing function rather than extending it.
                             println(s"% Warning: existing function definition for ${funcName} overwritten rather than extended") // TODO: handle this better
                         }
-                        val asPartialFun = Evaluator.createPartialFun(lhs, None, rhs)
+                        val asPartialFun = createPartialFun(lhs, None, rhs)
                         lazy val newEnv: Environment = {
                             lazy val cont = Closure(newEnv, asPartialFun)
                             this.registerFunction(funcName)
@@ -190,11 +190,11 @@ class Environment(private val map: Map[String, LazyValue], private var functions
         // If we've got here, then we have a function definition
         def toAlts(env: Environment, defn: Definition): Seq[(Environment, Seq[String], PartialFun)] = {
             defn match {
-                case Equation(lhs, rhs) => List((env, List(), Evaluator.createPartialFun(lhs, None, rhs)))
+                case Equation(lhs, rhs) => List((env, List(), createPartialFun(lhs, None, rhs)))
                 case WhereEquation(lhs, rhs, defs) => {
                     val extendedEnvironment = env.withDefinitions(defs)
                     extendedEnvironment match {
-                        case Right((newEnv, names)) => List((newEnv, names, Evaluator.createPartialFun(lhs, None, rhs)))
+                        case Right((newEnv, names)) => List((newEnv, names, createPartialFun(lhs, None, rhs)))
                         case x => List() // TODO: fix
                     }
                 }
@@ -203,7 +203,7 @@ class Environment(private val map: Map[String, LazyValue], private var functions
                     def f(_case: GuardedResult): PartialFun = {
                         _case match {
                             case GuardedResult(guard, expr) => {
-                                Evaluator.createPartialFun(lhs, Some(guard), expr)
+                                createPartialFun(lhs, Some(guard), expr)
                             }
                         }
                     }

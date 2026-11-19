@@ -5,7 +5,7 @@ import eduhaskell.errors._
 import eduhaskell.types._
 
 object TypeChecker {
-    def getType(env: Environment, e: Expr): Either[Error, Type] = {
+    def getType(env: TypeEnvironment, e: Expr): Either[Error, Type] = {
         e match {
             case Op(name) => Left(NotImplemented())
             case Id(name) => Left(NotImplemented())
@@ -117,7 +117,7 @@ object TypeChecker {
                 }
             }
             case FunctionWithClosures(closureAlts) => {
-                val altTypes = closureAlts.map({ case (closureEnv, _, alt) => getType(closureEnv, alt) })
+                val altTypes = closureAlts.map({ case (_, _, alt) => getType(env, alt) }) // TODO: here, we are ignoring the `closureEnv`
                 if (altTypes.length == 1) {
                     altTypes(0)
                 } else {
@@ -139,7 +139,7 @@ object TypeChecker {
         }
     }
 
-    def getTypeOfBinop(env: Environment, op: String, l: Expr, r: Expr): Either[Error, Type] = {
+    def getTypeOfBinop(env: TypeEnvironment, op: String, l: Expr, r: Expr): Either[Error, Type] = {
         val lType = getType(env, l)
         val rType = getType(env, r)
         def e(): Either[Error, Type] = {
@@ -248,7 +248,7 @@ object TypeChecker {
         }
     }
 
-    def getTypeOfPrefix(env: Environment, op: String, e: Expr): Either[Error, Type] = {
+    def getTypeOfPrefix(env: TypeEnvironment, op: String, e: Expr): Either[Error, Type] = {
         val eType = getType(env, e)
         op match {
             case "-" => {
@@ -261,7 +261,7 @@ object TypeChecker {
         }
     }
     
-    def getTypeOfApply(env: Environment, l: Expr, r: Expr): Either[Error, Type] = {
+    def getTypeOfApply(env: TypeEnvironment, l: Expr, r: Expr): Either[Error, Type] = {
         val lType = getType(env, l)
         val rType = getType(env, r)
         lType match {

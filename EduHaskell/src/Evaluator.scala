@@ -6,25 +6,6 @@ import eduhaskell.values._
 import eduhaskell.Environment
 
 object Evaluator {
-    def getLeftmostArgument(e: Expr): Expr = {
-        e match {
-            case Apply(l @ Apply(_, _), r) => getLeftmostArgument(l)
-            case Apply(l, r) => l
-        }
-    }
-
-    def removeLeftmostArgument(e: Expr): Expr = {
-        e match {
-            case Apply(l @ Apply(_, _), r) => Apply(removeLeftmostArgument(l), r)
-            case Apply(_, r) => r
-        }
-    }
-
-    def createPartialFun(lhs: Expr, guard: Option[Expr], rhs: Expr): PartialFun = {
-        val editedLhs = removeLeftmostArgument(lhs)
-        PartialFun(editedLhs, guard, rhs)
-    }
-
     def matchAndExtendEnvironment(env: Environment, conflictingNames: Seq[String], pattern: Expr, comparison: LazyValue): Either[Error, (Environment, Seq[String])] = {
         // If we're able to successfully pattern match, then we return Right((newEnv, names)),
         // where newEnv is the potentially extended environment (containing any

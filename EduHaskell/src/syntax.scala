@@ -145,5 +145,24 @@ object syntax {
     case class WhereEquation(lhs: Expr, rhs: Expr, defs: Seq[Definition]) extends Definition {
         lazy val source = s"${lhs.source} = ${rhs.source} where ${defs.map(_.source).mkString("; ")}"
     }
+
+    def getLeftmostArgument(e: Expr): Expr = {
+        e match {
+            case Apply(l @ Apply(_, _), r) => getLeftmostArgument(l)
+            case Apply(l, r) => l
+        }
+    }
+
+    def removeLeftmostArgument(e: Expr): Expr = {
+        e match {
+            case Apply(l @ Apply(_, _), r) => Apply(removeLeftmostArgument(l), r)
+            case Apply(_, r) => r
+        }
+    }
+
+    def createPartialFun(lhs: Expr, guard: Option[Expr], rhs: Expr): PartialFun = {
+        val editedLhs = removeLeftmostArgument(lhs)
+        PartialFun(editedLhs, guard, rhs)
+    }
 }
 

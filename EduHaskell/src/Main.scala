@@ -14,6 +14,7 @@ import eduhaskell.errors._
 
 import eduhaskell.Evaluator
 import eduhaskell.Environment
+import eduhaskell.TypeEnvironment
 import eduhaskell.TypeChecker
 
 import LRParser._
@@ -157,7 +158,7 @@ object Main {
                     }
                     if (instruction.isInstanceOf[Expr]) {
                         val expr = instruction.asInstanceOf[Expr]
-                        val _type = TypeChecker.getType(replEnv, expr)
+                        val _type = TypeChecker.getType(TypeEnvironment.empty, expr)
                         _type match {
                             case Right(_) | Left(NotImplemented()) => {
                                 // If the type error is just that we haven't implemented type
