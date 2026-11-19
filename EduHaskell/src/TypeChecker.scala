@@ -349,12 +349,10 @@ object TypeChecker {
 
     def getTypeOfWhere(env: TypeEnvironment, expr: Expr, defs: Seq[Definition]): Either[Error, Type] = {
         val extendedEnvironment = env.withDefinitions(defs)
-        extendedEnvironment match {
-            case Right(newEnv) => {
-                getType(newEnv, expr)
-            }
-            case x => return x.asInstanceOf[Either[Error, Type]]
-        }
+        ifNoTypeErrorMulti[TypeEnvironment, Type](
+            extendedEnvironment,
+            extendedEnvironment => getType(extendedEnvironment, expr)
+        )
     }
 
     def getTypeOfFunction(env: TypeEnvironment, alts: Seq[PartialFun]): Either[Error, Type] = {

@@ -1,9 +1,11 @@
 package eduhaskell
 
-import eduhaskell.TypeChecker
+import eduhaskell.syntax._
 import eduhaskell.types._
 
-class TypeCheckerTests extends munit.FunSuite {
+import eduhaskell.TypeChecker
+
+class TypeCheckerUnificationTests extends munit.FunSuite {
     def assertUnification(t1: Type, t2: Type, exp: Type): Unit = {
         val unification = TypeChecker.unify(t1, t2)
         unification match {
@@ -513,5 +515,98 @@ class TypeCheckerTests extends munit.FunSuite {
             f(int(), seq(g("a")))
         ))
         assertUnification(t1, t2, exp)
+    }
+}
+
+class TypeCheckerTypeTests extends munit.FunSuite {
+    def assertHasType(expr: Expr, expectedType: Type): Unit = {
+        val tcType = TypeChecker.getType(TypeEnvironment.empty, expr)
+        tcType match {
+            case Right(t) => assert(TypeChecker.typesEqual(t, expectedType))
+            case Left(_) => assert(false)
+        }
+    }
+
+    def assertUntypable(expr: Expr): Unit = {
+        val tcType = TypeChecker.getType(TypeEnvironment.empty, expr)
+        tcType match {
+            case Right(_) => assert(false)
+            case Left(_) => assert(true)
+        }
+    }
+
+    test("Get type of 1") {
+        val e = Num(1)
+        val t = IntegerType()
+        assertHasType(e, t)
+    }
+
+    test("Get type of 1 + 1") {
+        val e = Binop("+", Num(1), Num(1))
+        val t = IntegerType()
+        assertHasType(e, t)
+    }
+
+    test("Get type of 1.0 * 2.0") {
+        val e = Binop("*", Real(1.0), Real(2.0))
+        val t = RealType()
+        assertHasType(e, t)
+    }
+
+    test("Get type of 'a'") {
+        val e = Quote(Quotation("'", "a", "'"))
+        val t = CharacterType()
+        assertHasType(e, t)
+    }
+
+    test("Get type of \"abc\"") {
+        val e = Quote(Quotation("\"", "abc", "\""))
+        val t = SequenceType(CharacterType())
+        assertHasType(e, t)
+    }
+
+    test("Get type of (1, 2, 3)") {
+        val e = Tuple(List(Num(1), Num(2), Num(3)))
+        val t = TupleType(List(IntegerType(), IntegerType(), IntegerType()))
+        assertHasType(e, t)
+    }
+
+    test("Get type of (1, 0 == 1, 'a')") {
+        val e = Tuple(List(Num(1), Binop("==", Num(0), Num(1)), Quote(Quotation("'", "a", "'"))))
+        val t = TupleType(List(IntegerType(), BooleanType(), CharacterType()))
+        assertHasType(e, t)
+    }
+
+    test("Get type of [1, 2, 3]") {
+        val e = Sequence(List(Num(1), Num(2), Num(3)))
+        val t = SequenceType(IntegerType())
+        assertHasType(e, t)
+    }
+
+    test("Fail to type [1, 'a']") {
+        val e = Sequence(List(Num(1), Quote(Quotation("'", "a", "'"))))
+        assertUntypable(e)
+    }
+
+    test("Get type of if-statement") {
+        val e = If(Binop("==", Num(0), Num(1)), Num(1), Num(2))
+        val t = IntegerType()
+        assertHasType(e, t)
+    }
+
+    test("Fail to type bad if-statement 1") {
+        val e = If(Num(0), Num(1), Num(2))
+        assertUntypable(e)
+    }
+
+    test("Fail to type bad if-statement 2") {
+        val e = If(Binop("==", Num(0), Num(1)), Num(1), Quote(Quotation("'", "a", "'")))
+        assertUntypable(e)
+    }
+
+    test("Get type of where-statement") {
+        val e = Where(Id("x"), List(Equation(Id("x"), Num(1))))
+        val t = IntegerType()
+        assertHasType(e, t)
     }
 }
