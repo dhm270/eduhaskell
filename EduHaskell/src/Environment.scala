@@ -8,7 +8,7 @@ import eduhaskell.errors._
 import eduhaskell.syntax._
 import eduhaskell.Evaluator
 
-class Environment(private var map: Map[String, LazyValue], private var functionsInScope: List[String]) {
+class Environment(private val map: Map[String, LazyValue], private var functionsInScope: List[String]) {
     def extended(ident: String, lazyValue: LazyValue): Environment = {
         new Environment(this.map.updated(ident, lazyValue), this.functionsInScope)
     }

@@ -319,7 +319,6 @@ object Evaluator {
                 case If(condition, trueExpr, falseExpr) => handleCont(
                     evaluateIf(env, condition, trueExpr, falseExpr)
                 )
-
                 case Case(query, alts) => handleCont(
                     evaluateCase(env, query, alts)
                 )

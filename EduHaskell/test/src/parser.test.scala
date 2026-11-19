@@ -128,7 +128,7 @@ class ParserTests extends munit.FunSuite {
                         if (!structureMatches(query, query1)) {
                             false
                         } else {
-                            alts.zip(alts1).forall({ case ((a1, b1), (a2, b2)) => structureMatches(a1, a2) && structureMatches(b1, b2) })
+                            alts.zip(alts1).forall({ case (CaseArm(a1, b1), CaseArm(a2, b2)) => structureMatches(a1, a2) && structureMatches(b1, b2) })
                         }
                     }
                     case _ => false
@@ -309,18 +309,18 @@ class ParserTests extends munit.FunSuite {
         val result = parse("case x of 3 -> 4")
         val expectedResult = Case(
             Id("x"),
-            List((Num(3), Num(4)))
+            List(CaseArm(Num(3), Num(4)))
         )
         assert(structureMatches(result, expectedResult))
     }
 
     test("Parse case statement with multiple cases") {
-        val result = parse("case x of { 3 -> 4; 5 -> 6 }")
+        val result = parse("case x of { 3 -> 4 | 5 -> 6 }")
         val expectedResult = Case(
             Id("x"),
             List(
-                (Num(3), Num(4)),
-                (Num(5), Num(6))
+                CaseArm(Num(3), Num(4)),
+                CaseArm(Num(5), Num(6))
             )
         )
         assert(structureMatches(result, expectedResult))
