@@ -17,7 +17,7 @@ object EduHaskell extends ScalalrModule {
   def notation = "eduhaskell.scalalr"
   def unmanagedJars = "Assets"
   def scalalr = "Assets/scalalr"
-  def mainClass = Some("RunEduHaskell")
+  def mainClass = Some("Main")
   def releasePath = "eduhaskell"
 
   object test extends ScalaTests with TestModule.Munit {

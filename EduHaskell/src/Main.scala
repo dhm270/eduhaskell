@@ -18,7 +18,7 @@ import eduhaskell.TypeChecker
 
 import LRParser._
 
-object RunEduHaskell {
+object Main {
     var debugLevel = 0
 
     def main(args: Array[String]): Unit = {
