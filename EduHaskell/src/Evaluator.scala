@@ -389,7 +389,7 @@ object Evaluator {
     }
 
     def generateIntArithmeticSequence(start: Long, step: Long, end: Option[Long]): Either[Error, Value] = {
-        if (end.isDefined && start > end.get) {
+        if (end.isDefined && ((step >= 0 && start > end.get) || (step < 0 && start < end.get))) {
             Right(NilValue())
         } else {
             lazy val restOfSequence = generateIntArithmeticSequence(start + step, step, end)
@@ -401,7 +401,7 @@ object Evaluator {
     }
 
     def generateRealArithmeticSequence(start: Double, step: Double, end: Option[Double]): Either[Error, Value] = {
-        if (end.isDefined && start > end.get) {
+        if (end.isDefined && ((step >= 0 && start > end.get) || (step < 0 && start < end.get))) {
             Right(NilValue())
         } else {
             lazy val restOfSequence = generateRealArithmeticSequence(start + step, step, end)
