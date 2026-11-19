@@ -128,7 +128,7 @@ object TypeChecker {
                 ifNoTypeError[Type](generatorType, generatorType => {
                     generatorType match {
                         case SequenceType(subtype) => {
-                            // matchAndExtendEnvironment ...
+                            // TODO: matchAndExtendEnvironment ...
                             Left(NotImplemented())
                         }
                         case _ => Left(TypeError(s"cannot use an expression of type ${generatorType} as a generator in a sequence comprehension"))
