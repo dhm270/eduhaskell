@@ -8,7 +8,13 @@ object TypeChecker {
     def getType(env: TypeEnvironment, e: Expr): Either[Error, Type] = {
         e match {
             case Op(name) => Left(NotImplemented())
-            case Id(name) => Left(NotImplemented())
+            case Id(name) => {
+                if (env.containsName(name)) {
+                    Right(env.find(name))
+                } else {
+                    Left(UndeclaredVariable(name))
+                }
+            }
 
             case Num(_) => Right(IntegerType())
             case Real(_) => Right(RealType())
@@ -27,115 +33,139 @@ object TypeChecker {
                     ifNoTypeErrors[Type](subtypes, subtypesExtracted => Right(TupleType(subtypesExtracted)))
                 }
             }
-            case Sequence(exprs) => {
-                val subtypes = exprs.map(expr => getType(env, expr))
-                ifNoTypeErrors[Type](subtypes, subtypesExtracted => {
-                    if (subtypesExtracted.length == 1) {
-                        Right(SequenceType(subtypesExtracted(0)))
-                    } else {
-                        val comparisonType = subtypesExtracted(0)
-                        val otherTypes = subtypesExtracted.drop(1)
-                        val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
-                        if (allEqual) {
-                            Right(SequenceType(comparisonType))
-                        } else {
-                            Left(TypeError("elements of a sequence must all be of the same type"))
-                        }
-                    }
-                })
-            }
-            case ArithmeticSequence(start, next, end) => {
-                val startType = getType(env, start)
-                startType match {
-                    case Left(_) => return startType
-                    case Right(_) => {}
-                }
-                if (next.isDefined) {
-                    val nextType = getType(env, next.get)
-                    nextType match {
-                        case Left(_) => return nextType
-                        case Right(_) => {}
-                    }
-                    if (nextType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
-                }
-                if (end.isDefined) {
-                    val endType = getType(env, end.get)
-                    endType match {
-                        case Left(_) => return endType
-                        case Right(_) => {}
-                    }
-                    if (endType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
-                }
-                startType
-            }
-            case SequenceComprehension(expr, qualifiers) => Left(NotImplemented())
+            case Sequence(exprs) => getTypeOfSequence(env, exprs)
+            case ArithmeticSequence(start, next, end) => getTypeOfArithmeticSequence(env, start, next, end)
+            case SequenceComprehension(expr, qualifiers) => getTypeOfSequenceComprehension(env, expr, qualifiers)
 
             case Binop(op, l, r) => getTypeOfBinop(env, op, l, r)
             case Prefix(op, e) => getTypeOfPrefix(env, op, e)
             case Apply(l, r) => getTypeOfApply(env, l, r)
-            case If(condition, trueExpr, falseExpr) => {
-                val conditionType = getType(env, condition)
-                conditionType match {
-                    case Right(BooleanType()) => {
-                        val trueType = getType(env, trueExpr)
-                        val falseType = getType(env, falseExpr)
-                        ifNoTypeErrors[Type](List(trueType, falseType), extractedTypes => {
-                            if (typesEqual(extractedTypes(0), extractedTypes(1))) {
-                                Right(extractedTypes(0))
-                            } else {
-                                Left(TypeError("both arms of an if-statement must be of the same type"))
-                            }
-                        })
-                    }
-                    case Right(_) => {
-                        Left(TypeError(s"condition of an if-statement must be of type ${BooleanType().source}"))
-                    }
-                    case Left(_) => conditionType
-                }
-            }
+            case If(condition, trueExpr, falseExpr) => getTypeOfIf(env, condition, trueExpr, falseExpr)
 
-            case Case(query, alts) => Left(NotImplemented())
+            case Case(query, alts) => getTypeOfCase(env, query, alts)
 
-            case Where(expr, defs) => Left(NotImplemented())
+            case Where(expr, defs) => getTypeOfWhere(env, expr, defs)
 
             case PartialFun(pattern, guard, expr) => Left(NotImplemented())
-            case Function(alts) => {
-                val altTypes = alts.map(alt => getType(env, alt))
-                if (altTypes.length == 1) {
-                    altTypes(0)
-                } else {
-                    ifNoTypeErrors[Type](altTypes, altTypesExtracted => {
-                        val comparisonType = altTypesExtracted(0)
-                        val otherTypes = altTypesExtracted.drop(1)
-                        val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
-                        if (allEqual) {
-                            Right(comparisonType)
-                        } else {
-                            Left(TypeError("all possible paths in a given function must be of the same type"))
-                        }
-                    })
-                }
-            }
-            case FunctionWithClosures(closureAlts) => {
-                val altTypes = closureAlts.map({ case (_, _, alt) => getType(env, alt) }) // TODO: here, we are ignoring the `closureEnv`
-                if (altTypes.length == 1) {
-                    altTypes(0)
-                } else {
-                    ifNoTypeErrors[Type](altTypes, altTypesExtracted => {
-                        val comparisonType = altTypesExtracted(0)
-                        val otherTypes = altTypesExtracted.drop(1)
-                        val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
-                        if (allEqual) {
-                            Right(comparisonType)
-                        } else {
-                            Left(TypeError("all possible paths in a given function must be of the same type"))
-                        }
-                    })
-                }
-            }
+            case Function(alts) => getTypeOfFunction(env, alts)
+            // case FunctionWithClosures(closureAlts) => ...
+            // Not needed, because `FunctionWithClosures` is only ever generated by the evaluator.
+            // It will never exist at this stage.
             case Bra(e) => getType(env, e)
             
             case x => Left(TypeError(s"cannot get the type of an expression of type ${x.getClass()}"))
+        }
+    }
+
+    def getTypeOfSequence(env: TypeEnvironment, exprs: Seq[Expr]): Either[Error, Type] = {
+        if (exprs.exists(_.isInstanceOf[DoubleDot])) {
+            // TODO: remove duplication with `evaluateSequence` in evaluator?
+            if (exprs(0).isInstanceOf[DoubleDot]) return Left(SyntaxError("malformed arithmetic sequence"))
+            val start = exprs(0)
+            var next: Option[Expr] = None
+            var end: Option[Expr] = None
+            if (exprs(1).isInstanceOf[DoubleDot]) {
+                if (exprs.length == 3) {
+                    end = Some(exprs(2))
+                } else if (exprs.length > 3) {
+                    return Left(SyntaxError("malformed arithmetic sequence"))
+                }
+            } else {
+                next = Some(exprs(1))
+                if (!exprs(2).isInstanceOf[DoubleDot]) return Left(SyntaxError("malformed arithmetic sequence"))
+                if (exprs.length == 4) {
+                    end = Some(exprs(3))
+                } else if (exprs.length > 4) {
+                    return Left(SyntaxError("malformed arithmetic sequence"))
+                }
+            }
+            getType(env, ArithmeticSequence(start, next, end))
+        } else if (exprs.length == 0) {
+            Right(SequenceType(GenericType("a")))
+        } else {
+            val subtypes = exprs.map(expr => getType(env, expr))
+            ifNoTypeErrors[Type](subtypes, subtypesExtracted => {
+                if (subtypesExtracted.length == 1) {
+                    Right(SequenceType(subtypesExtracted(0)))
+                } else {
+                    val comparisonType = subtypesExtracted(0)
+                    val otherTypes = subtypesExtracted.drop(1)
+                    val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
+                    if (allEqual) {
+                        Right(SequenceType(comparisonType))
+                    } else {
+                        Left(TypeError("elements of a sequence must all be of the same type"))
+                    }
+                }
+            })
+        }
+    }
+
+    def getTypeOfArithmeticSequence(env: TypeEnvironment, start: Expr, next: Option[Expr], end: Option[Expr]): Either[Error, Type] = {
+        val startType = getType(env, start)
+        startType match {
+            case Left(_) => return startType
+            case Right(_) => {}
+        }
+        if (next.isDefined) {
+            val nextType = getType(env, next.get)
+            nextType match {
+                case Left(_) => return nextType
+                case Right(_) => {}
+            }
+            if (nextType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
+        }
+        if (end.isDefined) {
+            val endType = getType(env, end.get)
+            endType match {
+                case Left(_) => return endType
+                case Right(_) => {}
+            }
+            if (endType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
+        }
+        ifNoTypeError[Type](startType, startType => Right(SequenceType(startType)))
+    }
+
+    def getTypeOfSequenceComprehension(env: TypeEnvironment, expr: Expr, qualifiers: Seq[SequenceComprehensionQualifier]): Either[Error, Type] = {
+        if (qualifiers.length == 0) {
+            val exprType = getType(env, expr)
+            return ifNoTypeError[Type](exprType, exprType => Right(SequenceType(exprType)))
+        }
+
+        val qualifierInQuestion = qualifiers(0)
+        val remainingQualifiers = qualifiers.drop(1)
+
+        qualifierInQuestion match {
+            case SequenceComprehensionGenerator(pattern, generatorExpr) => {
+                val generatorType = getType(env, generatorExpr)
+                ifNoTypeError[Type](generatorType, generatorType => {
+                    generatorType match {
+                        case SequenceType(subtype) => {
+                            // matchAndExtendEnvironment ...
+                            Left(NotImplemented())
+                        }
+                        case _ => Left(TypeError(s"cannot use an expression of type ${generatorType} as a generator in a sequence comprehension"))
+                    }
+                })
+            }
+            case SequenceComprehensionDefinition(defn) => {
+                val extendedEnvironment = env.withDefinition(defn)
+                extendedEnvironment match {
+                    case Right(newEnv) => {
+                        getType(newEnv, SequenceComprehension(expr, remainingQualifiers))
+                    }
+                    case x => x.asInstanceOf[Either[Error, Type]]
+                }
+            }
+            case SequenceComprehensionGuard(guard) => {
+                val conditionType = getType(env, guard)
+                ifNoTypeError[Type](conditionType, conditionType => {
+                    conditionType match {
+                        case BooleanType() => getType(env, SequenceComprehension(expr, remainingQualifiers))
+                        case _ => Left(TypeError(s"sequence comprehension guard is of type ${conditionType}, but it should be ${BooleanType().source}"))
+                    }
+                })
+            }
         }
     }
 
@@ -285,6 +315,63 @@ object TypeChecker {
                 Left(TypeError(s"cannot call an expression of type ${t.source}"))
             }
             case x => x
+        }
+    }
+
+    def getTypeOfIf(env: TypeEnvironment, condition: Expr, trueExpr: Expr, falseExpr: Expr): Either[Error, Type] = {
+        val conditionType = getType(env, condition)
+        conditionType match {
+            case Right(BooleanType()) => {
+                val trueType = getType(env, trueExpr)
+                val falseType = getType(env, falseExpr)
+                ifNoTypeErrors[Type](List(trueType, falseType), extractedTypes => {
+                    if (typesEqual(extractedTypes(0), extractedTypes(1))) {
+                        Right(extractedTypes(0))
+                    } else {
+                        Left(TypeError("both arms of an if-statement must be of the same type"))
+                    }
+                })
+            }
+            case Right(_) => {
+                Left(TypeError(s"condition of an if-statement must be of type ${BooleanType().source}"))
+            }
+            case Left(_) => conditionType
+        }
+    }
+
+    def getTypeOfCase(env: TypeEnvironment, query: Expr, alts: Seq[CaseArm]): Either[Error, Type] = {
+        def altToPartialFun(alt: CaseArm): PartialFun = {
+            PartialFun(alt.pattern, None, alt.result)
+        }
+        val partialFuns = alts.map(altToPartialFun)
+        getType(env, Apply(Function(partialFuns), query))
+    }
+
+    def getTypeOfWhere(env: TypeEnvironment, expr: Expr, defs: Seq[Definition]): Either[Error, Type] = {
+        val extendedEnvironment = env.withDefinitions(defs)
+        extendedEnvironment match {
+            case Right(newEnv) => {
+                getType(newEnv, expr)
+            }
+            case x => return x.asInstanceOf[Either[Error, Type]]
+        }
+    }
+
+    def getTypeOfFunction(env: TypeEnvironment, alts: Seq[PartialFun]): Either[Error, Type] = {
+        val altTypes = alts.map(alt => getType(env, alt))
+        if (altTypes.length == 1) {
+            altTypes(0)
+        } else {
+            ifNoTypeErrors[Type](altTypes, altTypesExtracted => {
+                val comparisonType = altTypesExtracted(0)
+                val otherTypes = altTypesExtracted.drop(1)
+                val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
+                if (allEqual) {
+                    Right(comparisonType)
+                } else {
+                    Left(TypeError("all possible paths in a given function must be of the same type"))
+                }
+            })
         }
     }
 

@@ -14,6 +14,10 @@ class TypeEnvironment(private val map: Map[String, Type]) {
         new TypeEnvironment(this.map.updated(ident, _type))
     }
 
+    def containsName(ident: String): Boolean = {
+        this.map.isDefinedAt(ident)
+    }
+
     def find(ident: String): Type = {
         this.map(ident)
     }

@@ -538,8 +538,7 @@ object Evaluator {
                             Result(Right(NilValue()))
                         }
                     }
-                    case Right(x) => Result(Left(TypeError(s"sequence comprehension guard is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}")))
-                    case x => Result(x)
+                    case Left(_) => Result(conditionValue)
                 }
             }
         }

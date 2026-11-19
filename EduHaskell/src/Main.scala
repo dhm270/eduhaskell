@@ -174,7 +174,7 @@ object Main {
                     }
                     if (instruction.isInstanceOf[Expr]) {
                         val expr = instruction.asInstanceOf[Expr]
-                        val _type = TypeChecker.getType(TypeEnvironment.empty, expr)
+                        val _type = TypeChecker.getType(replTypeEnv, expr)
                         _type match {
                             case Right(_) | Left(NotImplemented()) => {
                                 // If the type error is just that we haven't implemented type
