@@ -45,6 +45,33 @@ object syntax {
 
     case class Sequence(exprs: Seq[Expr]) extends Expr {
         lazy val source = exprs.mkString("[", ", ", "]")
+
+        def containsDoubleDot(): Boolean = {
+            this.exprs.exists(_.isInstanceOf[DoubleDot])
+        }
+
+        def toArithmeticSequence(): Option[ArithmeticSequence] = {
+            if (exprs(0).isInstanceOf[DoubleDot]) return None
+            val start = exprs(0)
+            var next: Option[Expr] = None
+            var end: Option[Expr] = None
+            if (exprs(1).isInstanceOf[DoubleDot]) {
+                if (exprs.length == 3) {
+                    end = Some(exprs(2))
+                } else if (exprs.length > 3) {
+                    return None
+                }
+            } else {
+                next = Some(exprs(1))
+                if (!exprs(2).isInstanceOf[DoubleDot]) return None
+                if (exprs.length == 4) {
+                    end = Some(exprs(3))
+                } else if (exprs.length > 4) {
+                    return None
+                }
+            }
+            Some(ArithmeticSequence(start, next, end))
+        }
     }
 
     case class ArithmeticSequence(start: Expr, next: Option[Expr], end: Option[Expr]) extends Expr {

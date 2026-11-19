@@ -33,7 +33,16 @@ object TypeChecker {
                     ifNoTypeErrors[Type](subtypes, subtypesExtracted => Right(TupleType(subtypesExtracted)))
                 }
             }
-            case Sequence(exprs) => getTypeOfSequence(env, exprs)
+            case s @ Sequence(exprs) => {
+                if (s.containsDoubleDot()) {
+                    s.toArithmeticSequence() match {
+                        case Some(s) => getType(env, s)
+                        case None => Left(TypeError("malformed arithmetic sequence"))
+                    }
+                } else {
+                    getTypeOfSequence(env, exprs)
+                }
+            }
             case ArithmeticSequence(start, next, end) => getTypeOfArithmeticSequence(env, start, next, end)
             case SequenceComprehension(expr, qualifiers) => getTypeOfSequenceComprehension(env, expr, qualifiers)
 
@@ -58,29 +67,7 @@ object TypeChecker {
     }
 
     def getTypeOfSequence(env: TypeEnvironment, exprs: Seq[Expr]): Either[Error, Type] = {
-        if (exprs.exists(_.isInstanceOf[DoubleDot])) {
-            // TODO: remove duplication with `evaluateSequence` in evaluator?
-            if (exprs(0).isInstanceOf[DoubleDot]) return Left(SyntaxError("malformed arithmetic sequence"))
-            val start = exprs(0)
-            var next: Option[Expr] = None
-            var end: Option[Expr] = None
-            if (exprs(1).isInstanceOf[DoubleDot]) {
-                if (exprs.length == 3) {
-                    end = Some(exprs(2))
-                } else if (exprs.length > 3) {
-                    return Left(SyntaxError("malformed arithmetic sequence"))
-                }
-            } else {
-                next = Some(exprs(1))
-                if (!exprs(2).isInstanceOf[DoubleDot]) return Left(SyntaxError("malformed arithmetic sequence"))
-                if (exprs.length == 4) {
-                    end = Some(exprs(3))
-                } else if (exprs.length > 4) {
-                    return Left(SyntaxError("malformed arithmetic sequence"))
-                }
-            }
-            getType(env, ArithmeticSequence(start, next, end))
-        } else if (exprs.length == 0) {
+        if (exprs.length == 0) {
             Right(SequenceType(GenericType("a")))
         } else {
             val subtypes = exprs.map(expr => getType(env, expr))

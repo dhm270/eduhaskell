@@ -277,9 +277,13 @@ object Evaluator {
                     }
                 }
 
-                case Sequence(exprs) => handleCont(
-                    evaluateSequence(env, exprs)
-                )
+                case s @ Sequence(exprs) => {
+                    if (s.containsDoubleDot()) {
+                        e = s.toArithmeticSequence().get // type checker has already checked that it's valid
+                    } else {
+                        handleCont(evaluateSequence(env, exprs))
+                    }
+                }
                 case ArithmeticSequence(start, next, end) => handleCont(
                     evaluateArithmeticSequence(env, start, next, end)
                 )
@@ -358,28 +362,7 @@ object Evaluator {
     }
 
     def evaluateSequence(env: Environment, exprs: Seq[Expr]): EvaluateContinuation = {
-        if (exprs.exists(_.isInstanceOf[DoubleDot])) {
-            if (exprs(0).isInstanceOf[DoubleDot]) return Result(Left(SyntaxError("malformed arithmetic sequence")))
-            val start = exprs(0)
-            var next: Option[Expr] = None
-            var end: Option[Expr] = None
-            if (exprs(1).isInstanceOf[DoubleDot]) {
-                if (exprs.length == 3) {
-                    end = Some(exprs(2))
-                } else if (exprs.length > 3) {
-                    return Result(Left(SyntaxError("malformed arithmetic sequence")))
-                }
-            } else {
-                next = Some(exprs(1))
-                if (!exprs(2).isInstanceOf[DoubleDot]) return Result(Left(SyntaxError("malformed arithmetic sequence")))
-                if (exprs.length == 4) {
-                    end = Some(exprs(3))
-                } else if (exprs.length > 4) {
-                    return Result(Left(SyntaxError("malformed arithmetic sequence")))
-                }
-            }
-            evaluateArithmeticSequence(env, start, next, end)
-        } else if (exprs.length == 0) {
+        if (exprs.length == 0) {
             Result(Right(NilValue()))
         } else {
             val head = exprs(0)
