@@ -552,24 +552,66 @@ object Evaluator {
         def bad(err: Error): EvaluateContinuation = {
             Result(Left(err))
         }
+
         lazy val lValue = evaluate(env, l)
         lazy val rValue = evaluate(env, r)
+
+        // First check if we're dealing with an operator where we can do short-circuiting,
+        // i.e. we don't necessarily need to evaluate both operands.
+        op match {
+            case "||" => {
+                lValue match {
+                    case Right(BooleanValue(false)) => {
+                        rValue match {
+                            case r @ Right(BooleanValue(_)) => return Result(r)
+                            case Left(_) => return Result(rValue)
+                        }
+                    }
+                    case Right(BooleanValue(true)) => return ok(BooleanValue(true))
+                    case Left(_) => return Result(lValue)
+                }
+            }
+            case "&&" => {
+                lValue match {
+                    case Right(BooleanValue(true)) => {
+                        rValue match {
+                            case r @ Right(BooleanValue(_)) => return Result(r)
+                            case Left(_) => return Result(rValue)
+                        }
+                    }
+                    case Right(BooleanValue(false)) => return ok(BooleanValue(false))
+                    case Left(_) => return Result(lValue)
+                }
+            }
+            case _ => {}
+        }
+
+        // For anything else, we certainly need to evaluate both operands.
+        // Therefore, we might as well check at this point whether there's an
+        // error we need to propagate. Saves us doing it separately in each other case.
+
+        lValue match {
+            case Right(_) => {}
+            case Left(_) => return Result(lValue)
+        }
+        rValue match {
+            case Right(_) => {}
+            case Left(_) => return Result(rValue)
+        }
+
         op match {
             case "+" => {
                 lValue match {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(IntValue(int1 + int2))
-                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(RealValue(real1 + real2))
-                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Left(_) => Result(lValue)
                 }
             }
             case "-" => {
@@ -577,16 +619,13 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(IntValue(int1 - int2))
-                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(RealValue(real1 - real2))
-                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Left(_) => Result(lValue)
                 }
             }
             case "*" => {
@@ -594,16 +633,13 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(IntValue(int1 * int2))
-                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(RealValue(real1 * real2))
-                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Left(_) => Result(lValue)
                 }
             }
             case "/" => {
@@ -611,16 +647,13 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => if (int2 == 0) { bad(DivisionByZero()) } else { ok(IntValue(int1 / int2)) }
-                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => if (real2 == 0) { bad(DivisionByZero()) } else { ok(RealValue(real1 / real2)) }
-                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Left(_) => Result(lValue)
                 }
             }
             case "^" => {
@@ -628,16 +661,13 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(IntValue(Math.pow(int1, int2).intValue))
-                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(RealValue(Math.pow(real1, real2)))
-                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Left(_) => Result(lValue)
                 }
             }
             case ":" => {
@@ -649,16 +679,13 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(BooleanValue(int1 < int2))
-                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(BooleanValue(real1 < real2))
-                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Left(_) => Result(lValue)
                 }
             }
             case "<=" => {
@@ -666,16 +693,13 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(BooleanValue(int1 <= int2))
-                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(BooleanValue(real1 <= real2))
-                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Left(_) => Result(lValue)
                 }
             }
             case ">=" => {
@@ -683,16 +707,13 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(BooleanValue(int1 >= int2))
-                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(BooleanValue(real1 >= real2))
-                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Left(_) => Result(lValue)
                 }
             }
             case ">" => {
@@ -700,40 +721,13 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(BooleanValue(int1 > int2))
-                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(BooleanValue(real1 > real2))
-                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Left(_) => Result(lValue)
-                }
-            }
-            case "||" => {
-                lValue match {
-                    case Right(l @ BooleanValue(false)) => {
-                        rValue match {
-                            case r @ Right(BooleanValue(_)) => Result(r)
-                            case Left(_) => Result(rValue)
-                        }
-                    }
-                    case Right(BooleanValue(true)) => ok(BooleanValue(true))
-                    case Left(_) => Result(lValue)
-                }
-            }
-            case "&&" => {
-                lValue match {
-                    case Right(l @ BooleanValue(true)) => {
-                        rValue match {
-                            case r @ Right(BooleanValue(_)) => Result(r)
-                            case Left(_) => Result(rValue)
-                        }
-                    }
-                    case Right(BooleanValue(false)) => ok(BooleanValue(false))
-                    case Left(_) => Result(lValue)
                 }
             }
         }
@@ -750,25 +744,21 @@ object Evaluator {
             case Right(l @ IntValue(int1)) => {
                 rValue match {
                     case Right(IntValue(int2)) => ok(BooleanValue(int1 == int2))
-                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ RealValue(real1)) => {
                 rValue match {
                     case Right(RealValue(real2)) => ok(BooleanValue(real1 == real2))
-                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ CharValue(char1)) => {
                 rValue match {
                     case Right(CharValue(char2)) => ok(BooleanValue(char1 == char2))
-                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ BooleanValue(bool1)) => {
                 rValue match {
                     case Right(BooleanValue(bool2)) => ok(BooleanValue(bool1 == bool2))
-                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ FunctionValue(_)) => {
@@ -784,14 +774,12 @@ object Evaluator {
                         }
                     }
                     case Right(NilValue()) => ok(BooleanValue(false))
-                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ NilValue()) => {
                 rValue match {
                     case Right(NilValue()) => ok(BooleanValue(true))
                     case Right(ConsValue(_, _)) => ok(BooleanValue(false))
-                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ TupleValue(vals1)) => {
@@ -815,10 +803,8 @@ object Evaluator {
                         val x: EvaluateContinuation = ok(BooleanValue(true))
                         vals1.zip(vals2).foldLeft(x)(f)
                     }
-                    case Left(_) => Result(rValue)
                 }
             }
-            case x @ Left(_) => Result(x)
         }
     }
 
