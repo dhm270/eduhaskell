@@ -385,9 +385,9 @@ object TypeChecker {
                 b match {
                     case SequenceType(subtypeB) => {
                         val unificationResult = unify(subtypeA, subtypeB)
-                        ifNoTypeErrors[(Type, Substitution)](
-                            List(unificationResult),
-                            unifiedExtracted => Right((SequenceType(unifiedExtracted(0)._1)), unifiedExtracted(0)._2)
+                        ifNoTypeError[(Type, Substitution)](
+                            unificationResult,
+                            unifiedExtracted => Right((SequenceType(unifiedExtracted._1)), unifiedExtracted._2)
                         )
                     }
                     case _ => e()
@@ -402,10 +402,10 @@ object TypeChecker {
                             val substOutputA = outputA.substitute(map)
                             val substOutputB = outputB.substitute(map)
                             val unificationResult = unify(substOutputA, substOutputB)
-                            ifNoTypeErrors[(Type, Substitution)](
-                                List(unificationResult),
+                            ifNoTypeError[(Type, Substitution)](
+                                unificationResult,
                                 unifiedExtracted => {
-                                    val (unifiedType, subst) = unifiedExtracted(0)
+                                    val (unifiedType, subst) = unifiedExtracted
                                     Right((FunctionType(other.substitute(subst), unifiedType)), unionSubstitutions(map, subst))
                                 }
                             )
@@ -416,17 +416,17 @@ object TypeChecker {
                             f(argumentB, argumentA)
                         } else {
                             val argumentUnificationResult = unify(argumentA, argumentB)
-                            ifNoTypeErrors[(Type, Substitution)](
-                                List(argumentUnificationResult),
+                            ifNoTypeError[(Type, Substitution)](
+                                argumentUnificationResult,
                                 unifiedArgumentExtracted => {
-                                    val subst1 = unifiedArgumentExtracted(0)._2
+                                    val subst1 = unifiedArgumentExtracted._2
                                     val outputUnificationResult = unify(outputA.substitute(subst1), outputB.substitute(subst1))
-                                    ifNoTypeErrors[(Type, Substitution)](
-                                        List(outputUnificationResult),
+                                    ifNoTypeError[(Type, Substitution)](
+                                        outputUnificationResult,
                                         unifiedOutputExtracted => {
-                                            val subst2 = unifiedOutputExtracted(0)._2
+                                            val subst2 = unifiedOutputExtracted._2
                                             Right((
-                                                FunctionType(unifiedArgumentExtracted(0)._1.substitute(subst2), unifiedOutputExtracted(0)._1)),
+                                                FunctionType(unifiedArgumentExtracted._1.substitute(subst2), unifiedOutputExtracted._1)),
                                                 unionSubstitutions(subst1, subst2)
                                             )
                                         }
