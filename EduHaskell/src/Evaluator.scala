@@ -320,7 +320,9 @@ object Evaluator {
                     evaluateIf(env, condition, trueExpr, falseExpr)
                 )
 
-                case Case(query, alts) => return Left(NotImplemented())
+                case Case(query, alts) => handleCont(
+                    evaluateCase(env, query, alts)
+                )
 
                 case Where(expr, defs) => {
                     val extendedEnvironment = env.withDefinitions(defs)
@@ -933,6 +935,14 @@ object Evaluator {
             case Right(x) => Result(Left(TypeError(s"if-statement condition is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}")))
             case x => Result(x)
         }
+    }
+
+    def evaluateCase(env: Environment, query: Expr, alts: Seq[CaseArm]): EvaluateContinuation = {
+        def altToPartialFun(alt: CaseArm): PartialFun = {
+            PartialFun(alt.pattern, None, alt.result)
+        }
+        val partialFuns = alts.map(altToPartialFun)
+        evaluateApply(env, Function(partialFuns), query)
     }
 
     def evaluateFunction(env: Environment, alts: Seq[PartialFun]): EvaluateContinuation = {

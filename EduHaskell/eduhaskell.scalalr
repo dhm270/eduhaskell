@@ -263,10 +263,10 @@ expression: Expr = application
 caseExpression: Expr = 'case' maybeEOL query:expression maybeEOL 'of' maybeEOL alt { Case($query, List($alt)) }
                        | 'case' maybeEOL query:expression maybeEOL 'of' maybeEOL '{' maybeEOL alts maybeEOL '}' { Case($query, $alts) }
 
-alts: List[(Expr, Expr)] = alt { List($alt) }
-                           | alt SEMI alts { $alt :: $alts }
+alts: List[CaseArm] = alt { List($alt) }
+                           | alt '|' alts { $alt :: $alts }
 
-alt: (Expr, Expr) = pattern:pattern '->' expression { ($pattern, $expression) }
+alt: CaseArm = pattern:pattern '->' expression { CaseArm($pattern, $expression) }
 
 letExpression: Expr = 'let' equation 'in' maybeEOL expr { Where($expr, List($equation)) }
                       | 'let' '{' maybeEOL equations maybeEOL '}' maybeEOL 'in' maybeEOL expr { Where($expr, $equations.reverse) }
