@@ -106,17 +106,13 @@ class TypeEnvironment(private val map: Map[String, Type]) {
                 val exprs = flattenApply(lhs)
                 exprs(0) match {
                     case Id(funcName) => {
-                        val argument = getLeftmostArgument(r)
                         val asPartialFun = createPartialFun(lhs, None, rhs)
                         // TODO: check that the type of the argument can be unified
                         // with how it is used within the function definition
-                        val argumentType = TypeChecker.getType(this, argument)
                         val partialFunType = TypeChecker.getType(this, asPartialFun)
-                        ifNoTypeErrorsMulti[Type, TypeEnvironment](
-                            List(argumentType, partialFunType),
-                            extractedTypes => Right(
-                                this.define(funcName, FunctionType(extractedTypes(0), extractedTypes(1)))
-                            )
+                        ifNoTypeErrorMulti[Type, TypeEnvironment](
+                            partialFunType,
+                            extractedType => Right(this.define(funcName, extractedType))
                         )
                     }
                 }

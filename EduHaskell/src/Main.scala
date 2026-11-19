@@ -46,18 +46,30 @@ object Main {
         }
         try {
             var replEnv: Environment = Environment.empty
+            var replTypeEnv: TypeEnvironment = TypeEnvironment.empty
             if (fileName != "") {
                 val loadFileResult = loadFile(fileName)
                 loadFileResult match {
-                    case Right((env, names)) => replEnv = env
-                    case Left(e) => {
+                    case (Right((env, names)), Right(typeEnv)) => {
+                        replEnv = env
+                        replTypeEnv = typeEnv
+                    }
+                    case (Right((env, names)), Left(NotImplemented())) => {
+                        replEnv = env
+                    }
+                    case (Left(e), _) => {
+                        shouldStartRepl = false
+                        println("Error while loading file:")
+                        println(e.message)
+                    }
+                    case (_, Left(e)) => {
                         shouldStartRepl = false
                         println("Error while loading file:")
                         println(e.message)
                     }
                 }
             }
-            if (shouldStartRepl) repl(replEnv)
+            if (shouldStartRepl) repl(replEnv, replTypeEnv)
         } catch {
             case e: java.nio.file.NoSuchFileException => {
                 println(s"Input file '${fileName}' does not exist. Aborting.")
@@ -97,7 +109,7 @@ object Main {
         clause
     }
 
-    def loadFile(path: String): Either[Error, (Environment, Seq[String])] = {
+    def loadFile(path: String): (Either[Error, (Environment, Seq[String])], Either[Error, TypeEnvironment]) = {
         var state: ParseState = RUNNING
         val input = SourceTextCursor(Path.of(path))
         val scanner = makeScanner(input)
@@ -127,11 +139,15 @@ object Main {
             }
         }
 
-        Environment.empty.parseAllDefinitions(definitions)
+        (
+            Environment.empty.parseAllDefinitions(definitions),
+            TypeEnvironment.empty.parseAllDefinitions(definitions)
+        )
     }
 
-    def repl(initialReplEnv: Environment): Unit = {
+    def repl(initialReplEnv: Environment, initialReplTypeEnv: TypeEnvironment): Unit = {
         var replEnv = initialReplEnv
+        var replTypeEnv = initialReplTypeEnv
 
         var state: ParseState = RUNNING
         val input = SourceTextCursor(Path.of("/dev/console"))
@@ -183,9 +199,22 @@ object Main {
                             }
                         }
                     } else if (instruction.isInstanceOf[Definition]) {
-                        val extendedEnvironment = replEnv.withDefinition(instruction.asInstanceOf[Definition])
-                        extendedEnvironment match {
-                            case Right((newEnv, names)) => replEnv = newEnv
+                        val d = instruction.asInstanceOf[Definition]
+                        val extendedTypeEnvironment = replTypeEnv.withDefinition(d)
+                        def f(env: TypeEnvironment): Unit = {
+                            replTypeEnv = env
+                            val extendedEnvironment = replEnv.withDefinition(d)
+                            extendedEnvironment match {
+                                case Right((newEnv, names)) => replEnv = newEnv
+                                case Left(e) => {
+                                    print("! ")
+                                    println(e.message)
+                                }
+                            }
+                        }
+                        extendedTypeEnvironment match {
+                            case Right(newTypeEnv) => f(newTypeEnv)
+                            case Left(NotImplemented()) => f(replTypeEnv)
                             case Left(e) => {
                                 print("! ")
                                 println(e.message)
