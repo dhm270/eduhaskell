@@ -35,7 +35,7 @@ object TypeChecker {
                     } else {
                         val comparisonType = subtypesExtracted(0)
                         val otherTypes = subtypesExtracted.drop(1)
-                        val allEqual = otherTypes.forall(_ == comparisonType)
+                        val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
                         if (allEqual) {
                             Right(SequenceType(comparisonType))
                         } else {
@@ -80,7 +80,7 @@ object TypeChecker {
                         val trueType = getType(env, trueExpr)
                         val falseType = getType(env, falseExpr)
                         ifNoTypeErrors[Type](List(trueType, falseType), extractedTypes => {
-                            if (extractedTypes(0) == extractedTypes(1)) {
+                            if (typesEqual(extractedTypes(0), extractedTypes(1))) {
                                 Right(extractedTypes(0))
                             } else {
                                 Left(TypeError("both arms of an if-statement must be of the same type"))
@@ -107,7 +107,7 @@ object TypeChecker {
                     ifNoTypeErrors[Type](altTypes, altTypesExtracted => {
                         val comparisonType = altTypesExtracted(0)
                         val otherTypes = altTypesExtracted.drop(1)
-                        val allEqual = otherTypes.forall(_ == comparisonType)
+                        val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
                         if (allEqual) {
                             Right(comparisonType)
                         } else {
@@ -124,7 +124,7 @@ object TypeChecker {
                     ifNoTypeErrors[Type](altTypes, altTypesExtracted => {
                         val comparisonType = altTypesExtracted(0)
                         val otherTypes = altTypesExtracted.drop(1)
-                        val allEqual = otherTypes.forall(_ == comparisonType)
+                        val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
                         if (allEqual) {
                             Right(comparisonType)
                         } else {
@@ -196,21 +196,25 @@ object TypeChecker {
             case ":" => {
                 rType match {
                     case Right(SequenceType(subtype)) => {
-                        if (lType == Right(subtype)) {
-                            Right(SequenceType(subtype))
-                        } else {
-                            e1()
-                        }
+                        ifNoTypeError[Type](lType, l => {
+                            if (typesEqual(l, subtype)) {
+                                Right(SequenceType(subtype))
+                            } else {
+                                e1()
+                            }
+                        })
                     }
                     case _ => e1()
                 }
             }
             case "==" => {
-                if (lType == rType) {
-                    Right(BooleanType())
-                } else {
-                    e()
-                }
+                ifNoTypeErrors[Type](List(lType, rType), types => {
+                    if (typesEqual(types(0), types(1))) {
+                        Right(BooleanType())
+                    } else {
+                        e()
+                    }
+                })
             }
             case "<" | "<=" | ">=" | ">" => {
                 lType match {
@@ -290,6 +294,7 @@ object TypeChecker {
             case TupleType(subtypes) => {
                 b match {
                     case TupleType(subtypes1) => {
+                        subtypes.length == subtypes1.length &&
                         subtypes.zip(subtypes1).forall({ case (a, b) => typesEqual(a, b) })
                     }
                     case _ => false

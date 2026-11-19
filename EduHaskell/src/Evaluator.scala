@@ -546,11 +546,6 @@ object Evaluator {
     }
 
     def evaluateBinop(env: Environment, op: String, l: Expr, r: Expr): EvaluateContinuation = {
-        def e(op: String, l: Value, r: Value): EvaluateContinuation = {
-            Result(Left(TypeError(
-                s"operands of ${op} have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"
-            )))
-        }
         def ok(value: Value): EvaluateContinuation = {
             Result(Right(value))
         }
@@ -565,19 +560,16 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(IntValue(int1 + int2))
-                            case Right(r) => e("+", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(RealValue(real1 + real2))
-                            case Right(r) => e("+", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Right(x) => bad(TypeError(s"lhs operand of + has type ${x.getType()}, which is illegal"))
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case "-" => {
@@ -585,19 +577,16 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(IntValue(int1 - int2))
-                            case Right(r) => e("-", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(RealValue(real1 - real2))
-                            case Right(r) => e("-", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Right(x) => bad(TypeError(s"lhs operand of - has type ${x.getType()}, which is illegal"))
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case "*" => {
@@ -605,19 +594,16 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(IntValue(int1 * int2))
-                            case Right(r) => e("*", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(RealValue(real1 * real2))
-                            case Right(r) => e("*", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Right(x) => bad(TypeError(s"lhs operand of * is of type ${x.getType()}, which is illegal"))
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case "/" => {
@@ -625,19 +611,16 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => if (int2 == 0) { bad(DivisionByZero()) } else { ok(IntValue(int1 / int2)) }
-                            case Right(r) => e("/", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => if (real2 == 0) { bad(DivisionByZero()) } else { ok(RealValue(real1 / real2)) }
-                            case Right(r) => e("/", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Right(x) => bad(TypeError(s"lhs operand of / is of type ${x.getType()}, which is illegal"))
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case "^" => {
@@ -645,23 +628,19 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(IntValue(Math.pow(int1, int2).intValue))
-                            case Right(r) => e("^", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(RealValue(Math.pow(real1, real2)))
-                            case Right(r) => e("^", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Right(x) => bad(TypeError(s"lhs operand of ^ is of type ${x.getType()}, which is illegal"))
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case ":" => {
-                // TODO: some kind of type checking
                 ok(ConsValue(LazyValue(() => Result(lValue)), LazyValue(() => Result(rValue))))
             }
             case "==" => valuesEqual(lValue, rValue)
@@ -670,19 +649,16 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(BooleanValue(int1 < int2))
-                            case Right(r) => e("<", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(BooleanValue(real1 < real2))
-                            case Right(r) => e("<", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Right(x) => bad(NotImplemented())
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case "<=" => {
@@ -690,19 +666,16 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(BooleanValue(int1 <= int2))
-                            case Right(r) => e("<=", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(BooleanValue(real1 <= real2))
-                            case Right(r) => e("<=", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Right(x) => bad(NotImplemented())
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case ">=" => {
@@ -710,19 +683,16 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(BooleanValue(int1 >= int2))
-                            case Right(r) => e(">=", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(BooleanValue(real1 >= real2))
-                            case Right(r) => e(">=", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Right(x) => bad(NotImplemented())
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case ">" => {
@@ -730,19 +700,16 @@ object Evaluator {
                     case Right(l @ IntValue(int1)) => {
                         rValue match {
                             case Right(IntValue(int2)) => ok(BooleanValue(int1 > int2))
-                            case Right(r) => e(">", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(l @ RealValue(real1)) => {
                         rValue match {
                             case Right(RealValue(real2)) => ok(BooleanValue(real1 > real2))
-                            case Right(r) => e(">", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
-                    case Right(x) => bad(NotImplemented())
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case "||" => {
@@ -750,13 +717,11 @@ object Evaluator {
                     case Right(l @ BooleanValue(false)) => {
                         rValue match {
                             case r @ Right(BooleanValue(_)) => Result(r)
-                            case Right(r) => e("||", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(BooleanValue(true)) => ok(BooleanValue(true))
-                    case Right(x) => bad(NotImplemented())
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
             case "&&" => {
@@ -764,22 +729,17 @@ object Evaluator {
                     case Right(l @ BooleanValue(true)) => {
                         rValue match {
                             case r @ Right(BooleanValue(_)) => Result(r)
-                            case Right(r) => e("&&", l, r)
-                            case x => Result(x)
+                            case Left(_) => Result(rValue)
                         }
                     }
                     case Right(BooleanValue(false)) => ok(BooleanValue(false))
-                    case Right(x) => bad(NotImplemented())
-                    case x => Result(x)
+                    case Left(_) => Result(lValue)
                 }
             }
         }
     }
 
     def valuesEqual(lValue: Either[Error, Value], rValue: Either[Error, Value]): EvaluateContinuation = {
-        def m(l: Value, r: Value): String = {
-            s"operands of == have mismatched types: lhs is of type ${l.getType()}, rhs is of type ${r.getType()}"
-        }
         def ok(value: Value): EvaluateContinuation = {
             Result(Right(value))
         }
@@ -790,29 +750,25 @@ object Evaluator {
             case Right(l @ IntValue(int1)) => {
                 rValue match {
                     case Right(IntValue(int2)) => ok(BooleanValue(int1 == int2))
-                    case Right(r) => bad(TypeError(m(l, r)))
-                    case x => Result(x)
+                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ RealValue(real1)) => {
                 rValue match {
                     case Right(RealValue(real2)) => ok(BooleanValue(real1 == real2))
-                    case Right(r) => bad(TypeError(m(l, r)))
-                    case x => Result(x)
+                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ CharValue(char1)) => {
                 rValue match {
                     case Right(CharValue(char2)) => ok(BooleanValue(char1 == char2))
-                    case Right(r) => bad(TypeError(m(l, r)))
-                    case x => Result(x)
+                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ BooleanValue(bool1)) => {
                 rValue match {
                     case Right(BooleanValue(bool2)) => ok(BooleanValue(bool1 == bool2))
-                    case Right(r) => bad(TypeError(m(l, r)))
-                    case x => Result(x)
+                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ FunctionValue(_)) => {
@@ -828,45 +784,38 @@ object Evaluator {
                         }
                     }
                     case Right(NilValue()) => ok(BooleanValue(false))
-                    case Right(r) => bad(TypeError(m(l, r)))
-                    case x => Result(x)
+                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ NilValue()) => {
                 rValue match {
                     case Right(NilValue()) => ok(BooleanValue(true))
                     case Right(ConsValue(_, _)) => ok(BooleanValue(false))
-                    case Right(r) => bad(TypeError(m(l, r)))
-                    case x => Result(x)
+                    case Left(_) => Result(rValue)
                 }
             }
             case Right(l @ TupleValue(vals1)) => {
                 rValue match {
                     case Right(r @ TupleValue(vals2)) => {
-                        if (vals1.length == vals2.length) {
-                            def f(acc: EvaluateContinuation, curr: (LazyValue, LazyValue)): EvaluateContinuation = {
-                                evaluate(acc) match {
-                                    case Right(BooleanValue(true)) => {
-                                        curr match {
-                                            case (l, r) => {
-                                                val lValue = evaluate(l.get())
-                                                val rValue = evaluate(r.get())
-                                                valuesEqual(lValue, rValue)
-                                            }
-                                            case _ => ok(BooleanValue(false))
+                        def f(acc: EvaluateContinuation, curr: (LazyValue, LazyValue)): EvaluateContinuation = {
+                            evaluate(acc) match {
+                                case Right(BooleanValue(true)) => {
+                                    curr match {
+                                        case (l, r) => {
+                                            val lValue = evaluate(l.get())
+                                            val rValue = evaluate(r.get())
+                                            valuesEqual(lValue, rValue)
                                         }
+                                        case _ => ok(BooleanValue(false))
                                     }
-                                    case _ => acc
                                 }
+                                case _ => acc
                             }
-                            val x: EvaluateContinuation = ok(BooleanValue(true))
-                            vals1.zip(vals2).foldLeft(x)(f)
-                        } else {
-                            bad(TypeError(m(l, r)))
                         }
+                        val x: EvaluateContinuation = ok(BooleanValue(true))
+                        vals1.zip(vals2).foldLeft(x)(f)
                     }
-                    case Right(r) => bad(TypeError(m(l, r)))
-                    case x => Result(x)
+                    case Left(_) => Result(rValue)
                 }
             }
             case x @ Left(_) => Result(x)
