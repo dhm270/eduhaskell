@@ -4,11 +4,66 @@ import eduhaskell.syntax._
 import eduhaskell.errors._
 import eduhaskell.types._
 
-import collection.immutable.Set
+case class TypeContext(bindings: Map[String, Type]) {
+    def contains(name: String): Boolean = {
+        this.bindings.isDefinedAt(name)
+    }
+
+    def get(name: String): Type = {
+        this.bindings(name)
+    }
+
+    def without(name: String): TypeContext = {
+        TypeContext(this.bindings - name)
+    }
+
+    def _with(name: String, _type: Type): TypeContext = {
+        TypeContext(this.bindings.updated(name, _type))
+    }
+
+    def union(tc: TypeContext): Either[Error, TypeContext] = {
+        val commonNames = this.bindings.keys.toSeq.intersect(tc.bindings.keys.toSeq)
+        var commonMapping: Map[String, Type] = Map()
+        for (commonName <- commonNames) {
+            val t1 = this.get(commonName)
+            val t2 = tc.get(commonName)
+            val unification = TypeChecker.unify(t1, t2)
+            unification match {
+                case Right((t, subst)) => {
+                    commonMapping = commonMapping.updated(commonName, t)
+                }
+                case Left(_) => {
+                    return Left(TypeError(s"cannot unify types ${t1.source} and ${t2.source}"))
+                }
+            }
+        }
+        val finalMapping = (this.bindings ++ tc.bindings) ++ commonMapping
+        Right(TypeContext(finalMapping))
+    }
+
+    def isEmpty(): Boolean = {
+        this.bindings.isEmpty
+    }
+}
+
+object TypeContext {
+    def empty: TypeContext = TypeContext(Map())
+
+    def unionAll(contexts: Seq[TypeContext]): Either[Error, TypeContext] = {
+        def f(acc: Either[Error, TypeContext], curr: TypeContext): Either[Error, TypeContext] = {
+            acc match {
+                case Left(_) => acc
+                case Right(acc) => acc.union(curr)
+            }
+        }
+        val x: Either[Error, TypeContext] = Right(TypeContext.empty)
+        contexts.foldLeft(x)(f)
+    }
+}
 
 object TypeChecker {
-    def ok(t: Type): Either[Error, (Type, Set[String])] = {
-        Right((t, Set()))
+    def ok(t: Type): Either[Error, (Type, TypeContext)] = {
+        Right((t, TypeContext.empty))
     }
 
     def union[A](sets: Seq[Set[A]]): Set[A] = {
@@ -17,18 +72,18 @@ object TypeChecker {
         sets.foldLeft(x)(f)
     }
 
-    def infer(env: TypeEnvironment, e: Expr): Either[Error, (Type, Set[String])] = {
-        // If successful, returns the type, along with the free variables.
-        // Rationale: if a full expression has free variables, then there's
-        // an error, because that equates to an undeclared name.    
-
+    def infer(env: TypeEnvironment, e: Expr): Either[Error, (Type, TypeContext)] = {
+        // If successful, returns the type, along with the TypeContext.
+        
         e match {
             case Op(name) => Left(NotImplemented())
             case Id(name) => {
                 // We can't infer the type of this name at this point.
                 // What if we're within a binding?
                 // Then the value won't be the same as in the env.
-                Right((GenericType("a"), Set(name)))
+                val t = GenericType("a")
+                val tc = TypeContext(Map(name -> t))
+                Right((t, tc))
             }
 
             case Num(_) => ok(IntegerType())
@@ -45,12 +100,14 @@ object TypeChecker {
                     infer(env, exprs(0))
                 } else {
                     val subtypeInferences = exprs.map(expr => infer(env, expr))
-                    ifNoTypeErrors[(Type, Set[String])](
+                    ifNoTypeErrors[(Type, TypeContext)](
                         subtypeInferences,
                         subtypeInferences => {
                             val subtypes = subtypeInferences.map(_._1)
-                            val freeVars = union(subtypeInferences.map(_._2))
-                            Right((TupleType(subtypes), freeVars))
+                            val tc = TypeContext.unionAll(subtypeInferences.map(_._2))
+                            ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](tc, tc => {
+                                Right((TupleType(subtypes), tc))
+                            })
                         }
                     )
                 }
@@ -90,52 +147,59 @@ object TypeChecker {
 
     def getType(env: TypeEnvironment, e: Expr): Either[Error, Type] = {
         val inference = infer(env, e)
-        ifNoTypeErrorMulti[(Type, Set[String]), Type](inference, inference => {
-            val (t, freeVars) = inference
-            if (freeVars.size == 0) {
+        ifNoTypeErrorMulti[(Type, TypeContext), Type](inference, inference => {
+            val (t, tc) = inference
+            println(tc)
+            if (tc.isEmpty) {
                 Right(t)
             } else {
-                Left(UndeclaredVariable(freeVars.toSeq(0))) // TODO: report all in one go?
+                Left(UndeclaredVariable("")) // TODO: report all undeclared names
             }
         })
     }
 
-    def inferSequence(env: TypeEnvironment, exprs: Seq[Expr]): Either[Error, (Type, Set[String])] = {
+    def inferSequence(env: TypeEnvironment, exprs: Seq[Expr]): Either[Error, (Type, TypeContext)] = {
         if (exprs.length == 0) {
             ok(SequenceType(GenericType("a")))
         } else {
             val subtypeInferences = exprs.map(infer(env, _))
-            ifNoTypeErrors[(Type, Set[String])](subtypeInferences, subtypeInferences => {
+            ifNoTypeErrors[(Type, TypeContext)](subtypeInferences, subtypeInferences => {
                 if (subtypeInferences.length == 1) {
-                    val (t, freeVars) = subtypeInferences(0)
-                    Right((SequenceType(t), freeVars))
+                    val (t, tc) = subtypeInferences(0)
+                    Right((SequenceType(t), tc))
                 } else {
-                    val comparisonType = subtypeInferences(0)._1
-                    val otherTypes = subtypeInferences.map(_._1).drop(1)
-                    val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
-                    val freeVars = union(subtypeInferences.map(_._2))
-                    if (allEqual) {
-                        Right((SequenceType(comparisonType), freeVars))
-                    } else {
-                        Left(TypeError("elements of a sequence must all be of the same type"))
-                    }
+                    val tc = TypeContext.unionAll(subtypeInferences.map(_._2))
+                    ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](tc, tc => {
+                        val comparisonType = subtypeInferences(0)._1
+                        val otherTypes = subtypeInferences.map(_._1).drop(1)
+                        val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
+                        if (allEqual) {
+                            Right((SequenceType(comparisonType), tc))
+                        } else {
+                            Left(TypeError("elements of a sequence must all be of the same type"))
+                        }
+                    })
                 }
             })
         }
     }
 
-    def inferArithmeticSequence(env: TypeEnvironment, start: Expr, next: Option[Expr], end: Option[Expr]): Either[Error, (Type, Set[String])] = {
+    def inferArithmeticSequence(env: TypeEnvironment, start: Expr, next: Option[Expr], end: Option[Expr]): Either[Error, (Type, TypeContext)] = {
         val startInference = infer(env, start)
-        ifNoTypeError[(Type, Set[String])](startInference, startInference => {
-            val (startType, startFreeVars) = startInference
-            var freeVars = startFreeVars
+        ifNoTypeError[(Type, TypeContext)](startInference, startInference => {
+            val (startType, startTC) = startInference
+            var tc = startTC
             if (next.isDefined) {
                 val nextInference = infer(env, next.get)
                 nextInference match {
                     case Left(_) => return nextInference
-                    case Right((nextType, nextFreeVars)) => {
+                    case Right((nextType, nextTC)) => {
                         if (nextType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
-                        freeVars ++= nextFreeVars
+                        val unionResult = tc.union(nextTC)
+                        unionResult match {
+                            case Right(newTC) => tc = newTC
+                            case Left(_) => return unionResult.asInstanceOf[Either[Error, (Type, TypeContext)]]
+                        }
                     }
                 }
             }
@@ -143,22 +207,26 @@ object TypeChecker {
                 val endInference = infer(env, end.get)
                 endInference match {
                     case Left(_) => return endInference
-                    case Right((endType, endFreeVars)) => {
+                    case Right((endType, endTC)) => {
                         if (endType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
-                        freeVars ++= endFreeVars
+                        val unionResult = tc.union(endTC)
+                        unionResult match {
+                            case Right(newTC) => tc = newTC
+                            case Left(_) => return unionResult.asInstanceOf[Either[Error, (Type, TypeContext)]]
+                        }
                     }
                 }
             }
-            Right((SequenceType(startType)), freeVars)
+            Right((SequenceType(startType), tc))
         })
     }
 
-    def inferSequenceComprehension(env: TypeEnvironment, expr: Expr, qualifiers: Seq[SequenceComprehensionQualifier]): Either[Error, (Type, Set[String])] = {
+    def inferSequenceComprehension(env: TypeEnvironment, expr: Expr, qualifiers: Seq[SequenceComprehensionQualifier]): Either[Error, (Type, TypeContext)] = {
         if (qualifiers.length == 0) {
             val exprInference = infer(env, expr)
-            return ifNoTypeError[(Type, Set[String])](exprInference, exprInference => {
-                val (t, freeVars) = exprInference
-                Right((SequenceType(t), freeVars))
+            return ifNoTypeError[(Type, TypeContext)](exprInference, exprInference => {
+                val (t, tc) = exprInference
+                Right((SequenceType(t), tc))
             })
         }
 
@@ -168,8 +236,8 @@ object TypeChecker {
         qualifierInQuestion match {
             case SequenceComprehensionGenerator(pattern, generatorExpr) => {
                 val generatorInference = infer(env, generatorExpr)
-                ifNoTypeError[(Type, Set[String])](generatorInference, generatorInference => {
-                    val (generatorType, freeVars) = generatorInference
+                ifNoTypeError[(Type, TypeContext)](generatorInference, generatorInference => {
+                    val (generatorType, tc) = generatorInference
                     generatorType match {
                         case SequenceType(subtype) => {
                             // TODO: matchAndExtendEnvironment ...
@@ -185,19 +253,23 @@ object TypeChecker {
                     case Right(newEnv) => {
                         infer(newEnv, SequenceComprehension(expr, remainingQualifiers))
                     }
-                    case x => x.asInstanceOf[Either[Error, (Type, Set[String])]]
+                    case x => x.asInstanceOf[Either[Error, (Type, TypeContext)]]
                 }
             }
             case SequenceComprehensionGuard(guard) => {
                 val conditionInference = infer(env, guard)
-                ifNoTypeError[(Type, Set[String])](conditionInference, conditionInference => {
-                    val (conditionType, freeVars) = conditionInference
+                ifNoTypeError[(Type, TypeContext)](conditionInference, conditionInference => {
+                    val (conditionType, tc) = conditionInference
                     conditionType match {
                         case BooleanType() => {
                             val inference = infer(env, SequenceComprehension(expr, remainingQualifiers))
-                            ifNoTypeError[(Type, Set[String])](inference, inference => {
-                                val (t, freeVars1) = inference
-                                Right((t, freeVars ++ freeVars1))
+                            ifNoTypeError[(Type, TypeContext)](inference, inference => {
+                                val (t, tc1) = inference
+                                val unionResult = tc.union(tc1)
+                                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](
+                                    unionResult,
+                                    unionResult => Right((t, unionResult))
+                                )
                             })
                         }
                         case _ => Left(TypeError(s"sequence comprehension guard is of type ${conditionType}, but it should be ${BooleanType().source}"))
@@ -207,26 +279,30 @@ object TypeChecker {
         }
     }
 
-    def inferBinop(env: TypeEnvironment, op: String, l: Expr, r: Expr): Either[Error, (Type, Set[String])] = {
+    def inferBinop(env: TypeEnvironment, op: String, l: Expr, r: Expr): Either[Error, (Type, TypeContext)] = {
         val lInference = infer(env, l)
         val rInference = infer(env, r)
-        ifNoTypeErrors[(Type, Set[String])](
+        ifNoTypeErrors[(Type, TypeContext)](
             List(lInference, rInference),
             inferences => {
-                val (lType, lFreeVars) = inferences(0)
-                val (rType, rFreeVars) = inferences(1)
-                def e(): Either[Error, (Type, Set[String])] = {
+                val (lType, lTC) = inferences(0)
+                val (rType, rTC) = inferences(1)
+                def e(): Either[Error, (Type, TypeContext)] = {
                     Left(TypeError(
                         s"operands of ${op} have mismatched types: lhs is of type ${lType.source}, rhs is of type ${rType.source}"
                     ))
                 }
-                def e1(): Either[Error, (Type, Set[String])] = {
+                def e1(): Either[Error, (Type, TypeContext)] = {
                     Left(TypeError(
                         s"${op} cannot be applied to values of type ${lType.source} and ${rType.source}"
                     ))
                 }
-                def ok(t: Type): Either[Error, (Type, Set[String])] = {
-                    Right((t, lFreeVars ++ rFreeVars))
+                def ok(t: Type): Either[Error, (Type, TypeContext)] = {
+                    val unionResult = lTC.union(rTC)
+                    ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](
+                        unionResult,
+                        unionResult => Right((t, unionResult))
+                    )
                 }
                 op match {
                     case "+" | "-" | "*" | "/" | "^" => {
@@ -298,9 +374,9 @@ object TypeChecker {
         )
     }
 
-    def inferPrefix(env: TypeEnvironment, op: String, e: Expr): Either[Error, (Type, Set[String])] = {
+    def inferPrefix(env: TypeEnvironment, op: String, e: Expr): Either[Error, (Type, TypeContext)] = {
         val eInference = infer(env, e)
-        ifNoTypeError[(Type, Set[String])](eInference, eInference => {
+        ifNoTypeError[(Type, TypeContext)](eInference, eInference => {
             op match {
                 case "-" => {
                     eInference match {
@@ -313,19 +389,25 @@ object TypeChecker {
     }
     
     // TODO: Hindley's algorithm (Lambda calc slides 15)
-    def inferApply(env: TypeEnvironment, l: Expr, r: Expr): Either[Error, (Type, Set[String])] = {
+    def inferApply(env: TypeEnvironment, l: Expr, r: Expr): Either[Error, (Type, TypeContext)] = {
         val lInference = infer(env, l)
         val rInference = infer(env, r)
-        ifNoTypeErrors[(Type, Set[String])](
+        ifNoTypeErrors[(Type, TypeContext)](
             List(lInference, rInference),
             inferences => {
-                val (lType, lFreeVars) = inferences(0)
-                val (rType, rFreeVars) = inferences(1)
+                val (lType, lTC) = inferences(0)
+                val (rType, rTC) = inferences(1)
                 lType match {
                     case f @ FunctionType(argument, output) => {
                         val unificationResult = unify(argument, rType)
                         unificationResult match {
-                            case Right((unifiedType, subst)) => Right((output.substitute(subst)), lFreeVars ++ rFreeVars)
+                            case Right((unifiedType, subst)) => {
+                                val unionResult = lTC.union(rTC)
+                                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](
+                                    unionResult,
+                                    unionResult => Right((output.substitute(subst), unionResult))
+                                )
+                            }
                             case Left(_) => Left(TypeError(s"cannot call a function of type ${f.source} with an argument of type ${rType.source}"))
                         }
                     }
@@ -337,21 +419,26 @@ object TypeChecker {
         )
     }
 
-    def inferIf(env: TypeEnvironment, condition: Expr, trueExpr: Expr, falseExpr: Expr): Either[Error, (Type, Set[String])] = {
+    def inferIf(env: TypeEnvironment, condition: Expr, trueExpr: Expr, falseExpr: Expr): Either[Error, (Type, TypeContext)] = {
         val conditionInference = infer(env, condition)
-        ifNoTypeError[(Type, Set[String])](conditionInference, conditionInference => {
-            val (conditionType, conditionFreeVars) = conditionInference
+        ifNoTypeError[(Type, TypeContext)](conditionInference, conditionInference => {
+            val (conditionType, conditionTC) = conditionInference
             conditionType match {
                 case BooleanType() => {
                     val trueInference = infer(env, trueExpr)
                     val falseInference = infer(env, falseExpr)
-                    ifNoTypeErrors[(Type, Set[String])](
+                    ifNoTypeErrors[(Type, TypeContext)](
                         List(trueInference, falseInference),
                         inferences => {
-                            val (trueType, trueFreeVars) = inferences(0)
-                            val (falseType, falseFreeVars) = inferences(1)
+                            val (trueType, trueTC) = inferences(0)
+                            val (falseType, falseTC) = inferences(1)
                             if (typesEqual(trueType, falseType)) {
-                                Right((trueType, trueFreeVars ++ falseFreeVars))
+                                val tc = TypeContext.unionAll(List(
+                                    conditionTC, trueTC, falseTC
+                                ))
+                                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](
+                                    tc, tc => Right((trueType, tc))
+                                )
                             } else {
                                 Left(TypeError("both arms of an if-statement must be of the same type"))
                             }
@@ -365,7 +452,7 @@ object TypeChecker {
         })
     }
 
-    def inferCase(env: TypeEnvironment, query: Expr, alts: Seq[CaseArm]): Either[Error, (Type, Set[String])] = {
+    def inferCase(env: TypeEnvironment, query: Expr, alts: Seq[CaseArm]): Either[Error, (Type, TypeContext)] = {
         def altToPartialFun(alt: CaseArm): PartialFun = {
             PartialFun(alt.pattern, None, alt.result)
         }
@@ -373,30 +460,32 @@ object TypeChecker {
         infer(env, Apply(Function(partialFuns), query))
     }
 
-    def inferWhere(env: TypeEnvironment, expr: Expr, defs: Seq[Definition]): Either[Error, (Type, Set[String])] = {
+    def inferWhere(env: TypeEnvironment, expr: Expr, defs: Seq[Definition]): Either[Error, (Type, TypeContext)] = {
         val extendedEnvironment = env.withDefinitions(defs)
-        ifNoTypeErrorMulti[TypeEnvironment, (Type, Set[String])](
+        ifNoTypeErrorMulti[TypeEnvironment, (Type, TypeContext)](
             extendedEnvironment,
             extendedEnvironment => infer(extendedEnvironment, expr)
         )
     }
 
-    def inferFunction(env: TypeEnvironment, alts: Seq[PartialFun]): Either[Error, (Type, Set[String])] = {
+    def inferFunction(env: TypeEnvironment, alts: Seq[PartialFun]): Either[Error, (Type, TypeContext)] = {
         val altInferences = alts.map(alt => infer(env, alt))
         if (altInferences.length == 1) {
             altInferences(0)
         } else {
-            ifNoTypeErrors[(Type, Set[String])](altInferences, altInferences => {
-                val altTypes = altInferences.map(_._1)
-                val comparisonType = altTypes(0)
-                val otherTypes = altTypes.drop(1)
-                val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
-                val altFreeVars = union(altInferences.map(_._2))
-                if (allEqual) {
-                    Right((comparisonType, altFreeVars))
-                } else {
-                    Left(TypeError("all possible paths in a given function must be of the same type"))
-                }
+            ifNoTypeErrors[(Type, TypeContext)](altInferences, altInferences => {
+                val altTC = TypeContext.unionAll(altInferences.map(_._2))
+                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](altTC, altTC => {
+                    val altTypes = altInferences.map(_._1)
+                    val comparisonType = altTypes(0)
+                    val otherTypes = altTypes.drop(1)
+                    val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
+                    if (allEqual) {
+                        Right((comparisonType, altTC))
+                    } else {
+                        Left(TypeError("all possible paths in a given function must be of the same type"))
+                    }
+                })
             })
         }
     }
@@ -467,7 +556,7 @@ object TypeChecker {
         a match {
             case IntegerType() | RealType() | CharacterType() | BooleanType() => {
                 if (a == b) {
-                    Right(a, List())
+                    Right((a, List()))
                 } else {
                     e()
                 }
@@ -505,7 +594,7 @@ object TypeChecker {
                         val unificationResult = unify(subtypeA, subtypeB)
                         ifNoTypeError[(Type, Substitution)](
                             unificationResult,
-                            unifiedExtracted => Right((SequenceType(unifiedExtracted._1)), unifiedExtracted._2)
+                            unifiedExtracted => Right((SequenceType(unifiedExtracted._1), unifiedExtracted._2))
                         )
                     }
                     case _ => e()
@@ -524,7 +613,7 @@ object TypeChecker {
                                 unificationResult,
                                 unifiedExtracted => {
                                     val (unifiedType, subst) = unifiedExtracted
-                                    Right((FunctionType(other.substitute(subst), unifiedType)), unionSubstitutions(map, subst))
+                                    Right((FunctionType(other.substitute(subst), unifiedType), unionSubstitutions(map, subst)))
                                 }
                             )
                         }
@@ -544,9 +633,9 @@ object TypeChecker {
                                         unifiedOutputExtracted => {
                                             val subst2 = unifiedOutputExtracted._2
                                             Right((
-                                                FunctionType(unifiedArgumentExtracted._1.substitute(subst2), unifiedOutputExtracted._1)),
+                                                FunctionType(unifiedArgumentExtracted._1.substitute(subst2), unifiedOutputExtracted._1),
                                                 unionSubstitutions(subst1, subst2)
-                                            )
+                                            ))
                                         }
                                     )
                                 }
