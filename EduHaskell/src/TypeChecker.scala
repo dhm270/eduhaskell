@@ -25,11 +25,10 @@ object TypeChecker {
         e match {
             case Op(name) => Left(NotImplemented())
             case Id(name) => {
-                if (env.containsName(name)) {
-                    ok(env.find(name))
-                } else {
-                    Right((GenericType("a"), Set(name)))
-                }
+                // We can't infer the type of this name at this point.
+                // What if we're within a binding?
+                // Then the value won't be the same as in the env.
+                Right((GenericType("a"), Set(name)))
             }
 
             case Num(_) => ok(IntegerType())
