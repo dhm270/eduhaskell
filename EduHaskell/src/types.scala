@@ -48,35 +48,55 @@ object types {
         ifNoTypeErrors[A](List(unextractedType), seq => callback(seq(0)))
     }
 
+    def diversify(ourType: Type, otherType: Type): Type = {
+        // Make sure that we don't share any names with this other type
+        val ourNames = ourType.getGenericTypes()
+        val otherNames = otherType.getGenericTypes()
+        val overlappingNames = ourNames.intersect(otherNames)
+        var substitution: Substitution = List()
+        for (overlappingName <- overlappingNames) {
+            var i = 1
+            while (otherNames.contains(overlappingName + i)) i += 1
+            val ourNewName = overlappingName + i
+            substitution ++= List((overlappingName, GenericType(ourNewName)))
+        }
+        ourType.substitute(substitution)
+    }
+
     type Substitution = Seq[(String, Type)]
 
     trait Type {
         val source: String
         def substitute(map: Substitution): Type
+        def getGenericTypes(): Seq[String]
     }
 
     case class IntegerType() extends Type {
         val source = "Integer"
 
         def substitute(map: Substitution): Type = this
+        def getGenericTypes(): Seq[String] = List()
     }
 
     case class RealType() extends Type {
         val source = "Real"
 
         def substitute(map: Substitution): Type = this
+        def getGenericTypes(): Seq[String] = List()
     }
 
     case class CharacterType() extends Type {
         val source = "Character"
 
         def substitute(map: Substitution): Type = this
+        def getGenericTypes(): Seq[String] = List()
     }
 
     case class BooleanType() extends Type {
         val source = "Boolean"
 
         def substitute(map: Substitution): Type = this
+        def getGenericTypes(): Seq[String] = List()
     }
 
     case class TupleType(subtypes: Seq[Type]) extends Type {
@@ -85,6 +105,9 @@ object types {
         def substitute(map: Substitution): Type = {
             TupleType(subtypes.map(_.substitute(map)))
         }
+        def getGenericTypes(): Seq[String] = {
+            subtypes.flatMap(_.getGenericTypes())
+        }
     }
 
     case class SequenceType(subtype: Type) extends Type {
@@ -92,6 +115,9 @@ object types {
 
         def substitute(map: Substitution): Type = {
             SequenceType(subtype.substitute(map))
+        }
+        def getGenericTypes(): Seq[String] = {
+            subtype.getGenericTypes()
         }
     }
 
@@ -107,6 +133,9 @@ object types {
 
         def substitute(map: Substitution): Type = {
             FunctionType(argument.substitute(map), output.substitute(map))
+        }
+        def getGenericTypes(): Seq[String] = {
+            argument.getGenericTypes() ++ output.getGenericTypes()
         }
     }
 
@@ -133,6 +162,7 @@ object types {
             }
             t
         }
+        def getGenericTypes(): Seq[String] = List(name)
     }
 
     object Type {
