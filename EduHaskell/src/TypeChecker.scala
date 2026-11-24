@@ -41,6 +41,10 @@ case class TypeContext(bindings: Map[String, Type]) {
         Right(TypeContext(finalMapping))
     }
 
+    def getNames(): Iterable[String] = {
+        this.bindings.keys
+    }
+
     def isEmpty(): Boolean = {
         this.bindings.isEmpty
     }
@@ -149,11 +153,11 @@ object TypeChecker {
         val inference = infer(env, e)
         ifNoTypeErrorMulti[(Type, TypeContext), Type](inference, inference => {
             val (t, tc) = inference
-            println(tc)
-            if (tc.isEmpty) {
+            val undeclaredVariables = getUndeclaredVariables(env, tc)
+            if (undeclaredVariables.isEmpty) {
                 Right(t)
             } else {
-                Left(UndeclaredVariable("")) // TODO: report all undeclared names
+                Left(UndeclaredVariable(undeclaredVariables(0))) // TODO: report all undeclared names
             }
         })
     }
@@ -534,6 +538,26 @@ object TypeChecker {
     def unionSubstitutions(substA: Substitution, substB: Substitution): Substitution = {
         // TODO: is this definitely correct?
         substA ++ substB
+    }
+
+    def getUndeclaredVariables(env: TypeEnvironment, tc: TypeContext): Seq[String] = {
+        // Returns all the names which cannot be unified with a matching name
+        // in the `TypeEnvironment`.
+        var undeclaredVars: List[String] = List()
+        for (variable <- tc.getNames()) {
+            if (!env.containsName(variable)) {
+                undeclaredVars ++= List(variable)
+            } else {
+                val typeInEnv = env.find(variable)
+                val typeInTC = tc.get(variable)
+                val unification = unify(typeInEnv, typeInTC)
+                unification match {
+                    case Left(_) => undeclaredVars ++= List(variable)
+                    case Right(_) => {}
+                }
+            }
+        }
+        undeclaredVars
     }
 
     def unify(inputA: Type, inputB: Type): Either[Error, (Type, Substitution)] = {
