@@ -105,7 +105,10 @@ case class TypeEnvironment(map: Map[String, Type]) {
     def withEquationDefinition(lhs: Expr, rhs: Expr): Either[Error, TypeEnvironment] = {
         lhs match {
             case Id(name) => {
-                val rhsType = TypeChecker.getType(this, rhs)
+                // Define dummy type (in case recursive)
+                val genericType = TypeChecker.newGenericType()
+                val extendedEnv = this.define(name, genericType)
+                val rhsType = TypeChecker.getType(extendedEnv, rhs)
                 ifNoTypeErrorMulti[Type, TypeEnvironment](
                     rhsType,
                     extractedType => Right(this.define(name, extractedType))
@@ -115,10 +118,13 @@ case class TypeEnvironment(map: Map[String, Type]) {
                 val exprs = flattenApply(lhs)
                 exprs(0) match {
                     case Id(funcName) => {
+                        // Define dummy type (in case recursive)
+                        val genericType = TypeChecker.newGenericType()
+                        val extendedEnv = this.define(funcName, genericType)
                         val asPartialFun = createPartialFun(lhs, None, rhs)
                         // TODO: check that the type of the argument can be unified
                         // with how it is used within the function definition
-                        val partialFunType = TypeChecker.getType(this, asPartialFun)
+                        val partialFunType = TypeChecker.getType(extendedEnv, asPartialFun)
                         ifNoTypeErrorMulti[Type, TypeEnvironment](
                             partialFunType,
                             extractedType => Right(this.define(funcName, extractedType))
