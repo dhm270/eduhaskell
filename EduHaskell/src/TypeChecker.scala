@@ -153,6 +153,7 @@ object TypeChecker {
                 if (exprs.length == 1) {
                     infer(env, exprs(0))
                 } else {
+                    // TODO: fix e.g. `f x = (x, x + 1)`
                     val subtypeInferences = exprs.map(expr => infer(env, expr))
                     ifNoTypeErrors[(Type, TypeContext)](
                         subtypeInferences,
@@ -224,13 +225,15 @@ object TypeChecker {
                 } else {
                     val tc = TypeContext.unionAll(subtypeInferences.map(_._2))
                     ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](tc, tc => {
-                        val comparisonType = subtypeInferences(0)._1
-                        val otherTypes = subtypeInferences.map(_._1).drop(1)
-                        val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
-                        if (allEqual) {
-                            Right((SequenceType(comparisonType), tc))
-                        } else {
-                            Left(TypeError("elements of a sequence must all be of the same type"))
+                        val types = subtypeInferences.map(_._1)
+                        val unifiedType = unifyAll(types)
+                        unifiedType match {
+                            case Right((unifiedType, subst)) => {
+                                Right((SequenceType(unifiedType), tc.substitute(subst)))
+                            }
+                            case _ => {
+                                Left(TypeError("elements of a sequence must all be of the same type"))
+                            }
                         }
                     })
                 }
@@ -242,17 +245,24 @@ object TypeChecker {
         val startInference = infer(env, start)
         ifNoTypeError[(Type, TypeContext)](startInference, startInference => {
             val (startType, startTC) = startInference
+            var returnType = startType
             var tc = startTC
             if (next.isDefined) {
                 val nextInference = infer(env, next.get)
                 nextInference match {
                     case Left(_) => return nextInference
                     case Right((nextType, nextTC)) => {
-                        if (nextType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
-                        val unionResult = tc.union(nextTC)
-                        unionResult match {
-                            case Right(newTC) => tc = newTC
-                            case Left(_) => return unionResult.asInstanceOf[Either[Error, (Type, TypeContext)]]
+                        val nextUnificationWithReturn = unify(nextType, returnType)
+                        nextUnificationWithReturn match {
+                            case Right((unifiedNextType, nextSubst)) => {
+                                returnType = unifiedNextType
+                                val unionResult = tc.union(nextTC)
+                                unionResult match {
+                                    case Right(newTC) => tc = newTC.substitute(nextSubst)
+                                    case Left(_) => return unionResult.asInstanceOf[Either[Error, (Type, TypeContext)]]
+                                }
+                            }
+                            case _ => Left(TypeError("elements of a sequence must all be of the same type"))
                         }
                     }
                 }
@@ -262,16 +272,22 @@ object TypeChecker {
                 endInference match {
                     case Left(_) => return endInference
                     case Right((endType, endTC)) => {
-                        if (endType != startType) return Left(TypeError("elements of a sequence must all be of the same type"))
-                        val unionResult = tc.union(endTC)
-                        unionResult match {
-                            case Right(newTC) => tc = newTC
-                            case Left(_) => return unionResult.asInstanceOf[Either[Error, (Type, TypeContext)]]
+                        val endUnificationWithReturn = unify(endType, returnType)
+                        endUnificationWithReturn match {
+                            case Right((unifiedEndType, endSubst)) => {
+                                returnType = unifiedEndType
+                                val unionResult = tc.union(endTC)
+                                unionResult match {
+                                    case Right(newTC) => tc = newTC.substitute(endSubst)
+                                    case Left(_) => return unionResult.asInstanceOf[Either[Error, (Type, TypeContext)]]
+                                }
+                            }
+                            case _ => Left(TypeError("elements of a sequence must all be of the same type"))
                         }
                     }
                 }
             }
-            Right((SequenceType(startType), tc))
+            Right((SequenceType(returnType), tc))
         })
     }
 
@@ -314,16 +330,17 @@ object TypeChecker {
                 val conditionInference = infer(env, guard)
                 ifNoTypeError[(Type, TypeContext)](conditionInference, conditionInference => {
                     val (conditionType, tc) = conditionInference
-                    conditionType match {
-                        case BooleanType() => {
+                    // Attempt to unify `conditionType` with Boolean
+                    val conditionUnificationWithBool = unify(conditionType, BooleanType())
+                    conditionUnificationWithBool match {
+                        case Right((_, subst)) => {
                             val inference = infer(env, SequenceComprehension(expr, remainingQualifiers))
                             ifNoTypeError[(Type, TypeContext)](inference, inference => {
                                 val (t, tc1) = inference
                                 val unionResult = tc.union(tc1)
-                                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](
-                                    unionResult,
-                                    unionResult => Right((t, unionResult))
-                                )
+                                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](unionResult, unionResult => {
+                                    Right((t, unionResult.substitute(subst)))
+                                })
                             })
                         }
                         case _ => Left(TypeError(s"sequence comprehension guard is of type ${conditionType}, but it should be ${BooleanType().source}"))
@@ -407,11 +424,11 @@ object TypeChecker {
                                 // Attempt to unify the left operand with the subtype we just got
                                 val leftUnificationWithSubtype = unify(lType, subtype)
                                 leftUnificationWithSubtype match {
-                                    case Right((_, subst2)) => {
+                                    case Right((unifiedSubtype, subst2)) => {
                                         val unifiedSubst = unionSubstitutions(subst1, subst2)
                                         val attemptedTCUnification = lTC.union(rTC)
                                         return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
-                                            Right((SequenceType(subtype), attemptedTCUnification.substitute(unifiedSubst)))
+                                            Right((SequenceType(unifiedSubtype), attemptedTCUnification.substitute(unifiedSubst)))
                                         })
                                     }
                                     case Left(_) => {}
@@ -503,17 +520,34 @@ object TypeChecker {
     def inferPrefix(env: TypeEnvironment, op: String, e: Expr): Either[Error, (Type, TypeContext)] = {
         val eInference = infer(env, e)
         ifNoTypeError[(Type, TypeContext)](eInference, eInference => {
+            val (eType, eTC) = eInference
             op match {
                 case "-" => {
-                    eInference match {
-                        case (IntegerType(), _) | (RealType(), _) => Right(eInference)
-                        case (t, _) => Left(TypeError(s"cannot negate a value of type ${t.source}"))
+                    // Attempt to unify the operand with Integer
+                    val unificationWithInt = unify(eType, IntegerType())
+                    unificationWithInt match {
+                        case Right((_, subst)) => {
+                            return Right((IntegerType(), eTC.substitute(subst)))
+                        }
+                        case Left(_) => {}
                     }
+                    // If it's not Integer, then let's try Real instead
+                    val unificationWithReal = unify(eType, RealType())
+                    unificationWithReal match {
+                        case Right((_, subst)) => {
+                            return Right((RealType(), eTC.substitute(subst)))
+                        }
+                        case Left(_) => {}
+                    }
+                    Left(TypeError(s"cannot negate a value of type ${eType.source}"))
                 }
             }
         })
     }
 
+    // TODO: fix e.g.
+    // f b = if b then 1 else 0
+    // g x = f (x == 1)
     def inferApply(env: TypeEnvironment, l: Expr, r: Expr): Either[Error, (Type, TypeContext)] = {
         // Hindley's algorithm
         val lInference = infer(env, l)
@@ -559,31 +593,32 @@ object TypeChecker {
         val conditionInference = infer(env, condition)
         ifNoTypeError[(Type, TypeContext)](conditionInference, conditionInference => {
             val (conditionType, conditionTC) = conditionInference
-            conditionType match {
-                case BooleanType() => {
+            // Attempt to unify `conditionType` with Boolean
+            val conditionUnificationWithBool = unify(conditionType, BooleanType())
+            conditionUnificationWithBool match {
+                case Right((_, subst1)) => {
                     val trueInference = infer(env, trueExpr)
                     val falseInference = infer(env, falseExpr)
-                    ifNoTypeErrors[(Type, TypeContext)](
-                        List(trueInference, falseInference),
-                        inferences => {
-                            val (trueType, trueTC) = inferences(0)
-                            val (falseType, falseTC) = inferences(1)
-                            if (typesEqual(trueType, falseType)) {
-                                val tc = TypeContext.unionAll(List(
-                                    conditionTC, trueTC, falseTC
-                                ))
-                                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](
-                                    tc, tc => Right((trueType, tc))
+                    ifNoTypeErrors[(Type, TypeContext)](List(trueInference, falseInference), inferences => {
+                        val (trueType, trueTC) = inferences(0)
+                        val (falseType, falseTC) = inferences(1)
+                        // Attempt to unify the types of the two arms
+                        val attemptedUnification = unify(trueType, falseType)
+                        attemptedUnification match {
+                            case Right((unifiedType, subst2)) => {
+                                val unifiedSubst = unionSubstitutions(subst1, subst2)
+                                val tc = TypeContext.unionAll(
+                                    List(conditionTC, trueTC, falseTC)
                                 )
-                            } else {
-                                Left(TypeError("both arms of an if-statement must be of the same type"))
+                                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](tc, tc => {
+                                    Right((unifiedType, tc.substitute(unifiedSubst)))
+                                })
                             }
+                            case _ => Left(TypeError("both arms of an if-statement must be of the same type"))
                         }
-                    )
+                    })
                 }
-                case _ => {
-                    Left(TypeError(s"condition of an if-statement must be of type ${BooleanType().source}"))
-                }
+                case _ => Left(TypeError(s"condition of an if-statement must be of type ${BooleanType().source}"))
             }
         })
     }
@@ -635,13 +670,14 @@ object TypeChecker {
                 val altTC = TypeContext.unionAll(altInferences.map(_._2))
                 ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](altTC, altTC => {
                     val altTypes = altInferences.map(_._1)
-                    val comparisonType = altTypes(0)
-                    val otherTypes = altTypes.drop(1)
-                    val allEqual = otherTypes.forall(typesEqual(_, comparisonType))
-                    if (allEqual) {
-                        Right((comparisonType, altTC))
-                    } else {
-                        Left(TypeError("all possible paths in a given function must be of the same type"))
+                    val unifiedType = unifyAll(altTypes)
+                    unifiedType match {
+                        case Right((unifiedType, subst)) => {
+                            Right((unifiedType, altTC.substitute(subst)))
+                        }
+                        case _ => {
+                            Left(TypeError("all possible paths in a given function must be of the same type"))
+                        }
                     }
                 })
             })
@@ -836,5 +872,21 @@ object TypeChecker {
                 }
             }
         }
+    }
+
+    def unifyAll(inputs: Seq[Type]): Either[Error, (Type, Substitution)] = {
+        def f(acc: Either[Error, (Type, Substitution)], curr: Type): Either[Error, (Type, Substitution)] = {
+            ifNoTypeError[(Type, Substitution)](acc, acc => {
+                val (accType, accSubst) = acc
+                val attemptedUnification = unify(accType, curr)
+                ifNoTypeError[(Type, Substitution)](attemptedUnification, attemptedUnification => {
+                    val (unifiedType, subst) = attemptedUnification
+                    val unifiedSubst = unionSubstitutions(accSubst, subst)
+                    Right((unifiedType, unifiedSubst))
+                })
+            })
+        }
+        val x: Either[Error, (Type, Substitution)] = Right((newGenericType(), List()))
+        inputs.foldLeft(x)(f)
     }
 }

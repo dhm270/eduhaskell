@@ -139,7 +139,7 @@ object types {
                         }
                     }
                     case _ => {
-                        t = t.substitute(map.drop(i + 1))
+                        t = t.substitute(map.drop(i))
                         i = map.length // break out of loop
                     }
                 }
