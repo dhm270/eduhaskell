@@ -48,21 +48,6 @@ object types {
         ifNoTypeErrors[A](List(unextractedType), seq => callback(seq(0)))
     }
 
-    def diversify(ourType: Type, otherType: Type): Type = {
-        // Make sure that we don't share any names with this other type
-        val ourNames = ourType.getGenericTypes()
-        val otherNames = otherType.getGenericTypes()
-        val overlappingNames = ourNames.intersect(otherNames)
-        var substitution: Substitution = List()
-        for (overlappingName <- overlappingNames) {
-            var i = 1
-            while (otherNames.contains(overlappingName + i)) i += 1
-            val ourNewName = overlappingName + i
-            substitution ++= List((overlappingName, GenericType(ourNewName)))
-        }
-        ourType.substitute(substitution)
-    }
-
     type Substitution = Seq[(String, Type)]
 
     trait Type {

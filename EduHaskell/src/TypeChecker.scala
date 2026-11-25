@@ -631,7 +631,6 @@ object TypeChecker {
                 undeclaredVars ++= List(variable)
             } else {
                 val typeInEnv = env.find(variable)
-                val typeInTC = diversify(tc.get(variable), typeInEnv)
                 val unification = unify(typeInEnv, typeInTC)
                 unification match {
                     case Left(_) => undeclaredVars ++= List(variable)
