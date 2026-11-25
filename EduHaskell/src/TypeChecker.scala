@@ -544,9 +544,6 @@ object TypeChecker {
         })
     }
 
-    // TODO: fix e.g.
-    // f b = if b then 1 else 0
-    // g x = f (x == 1)
     def inferApply(env: TypeEnvironment, l: Expr, r: Expr): Either[Error, (Type, TypeContext)] = {
         // Hindley's algorithm
         val lInference = infer(env, l)
@@ -650,13 +647,29 @@ object TypeChecker {
     }
 
     def inferPartialFun(env: TypeEnvironment, pattern: Expr, guard: Option[Expr], expr: Expr): Either[Error, (Type, TypeContext)] = {
-        val argumentType = infer(env, pattern)
-        val outputType = infer(env, expr)
+        // If the pattern is multiple things, then we convert it.
+        // Instead, we want to think of this as a function that takes only
+        // a single parameter and, if it is defined to have "multiple parameters",
+        // then we return a partial function.
+        var pat = pattern
+        var e = expr
+        pat match {
+            case Apply(l, r) => {
+                val argument = getLeftmostArgument(pat)
+                val partialFun = createPartialFun(pat, guard, e)
+                pat = argument
+                e = partialFun
+            }
+            case _ => {}
+        }
+
+        val argumentType = infer(env, pat)
+        val outputType = infer(env, e)
         ifNoTypeErrors[(Type, TypeContext)](
             List(argumentType, outputType),
             inferences => {
                 val (argumentType, argumentTC) = inferences(0)
-                val (outputType, outputTC) = inferences(1)
+                var (outputType, outputTC) = inferences(1)
                 val attemptedUnification = argumentTC.unionAndReturnSubst(outputTC)
                 ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](attemptedUnification, attemptedUnification => {
                     val (unifiedTC, subst) = attemptedUnification
@@ -664,6 +677,7 @@ object TypeChecker {
                         argumentType.substitute(subst),
                         outputType.substitute(subst)
                     )
+                    outputTC = outputTC.substitute(subst)
                     val partialFunTC = outputTC.subtract(argumentTC)
                     Right((partialFunType, partialFunTC))
                 })
