@@ -635,7 +635,15 @@ object TypeChecker {
         val extendedEnvironment = env.withDefinitions(defs)
         ifNoTypeErrorMulti[TypeEnvironment, (Type, TypeContext)](
             extendedEnvironment,
-            extendedEnvironment => infer(extendedEnvironment, expr)
+            extendedEnvironment => {
+                val newNames = extendedEnvironment.difference(env)
+                val inference = infer(extendedEnvironment, expr)
+                ifNoTypeError[(Type, TypeContext)](inference, inference => {
+                    val (t, tc) = inference
+                    val modifiedTC = tc.subtract(TypeContext(newNames))
+                    Right((t, modifiedTC))
+                })
+            }
         )
     }
 

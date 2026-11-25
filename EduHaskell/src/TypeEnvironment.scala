@@ -1,7 +1,5 @@
 package eduhaskell
 
-import collection.mutable.Map
-
 import eduhaskell.errors._
 import eduhaskell.syntax._
 import eduhaskell.types._
@@ -9,7 +7,7 @@ import eduhaskell.types._
 // TODO: move "conflicting names" checks to the type checker
 // rather than the evaluator?
 
-class TypeEnvironment(private val map: Map[String, Type]) {
+case class TypeEnvironment(map: Map[String, Type]) {
     def extended(ident: String, _type: Type): TypeEnvironment = {
         new TypeEnvironment(this.map.updated(ident, _type))
     }
@@ -36,6 +34,10 @@ class TypeEnvironment(private val map: Map[String, Type]) {
             }
             case _ => List(e)
         }
+    }
+
+    def difference(other: TypeEnvironment): Map[String, Type] = {
+        this.map -- other.map.keys
     }
 
     def withDefinition(defn: Definition): Either[Error, TypeEnvironment] = {
