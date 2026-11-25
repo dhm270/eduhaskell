@@ -21,32 +21,67 @@ case class TypeContext(bindings: Map[String, Type]) {
         TypeContext(this.bindings.updated(name, _type))
     }
 
-    def union(tc: TypeContext): Either[Error, TypeContext] = {
-        val commonNames = this.bindings.keys.toSeq.intersect(tc.bindings.keys.toSeq)
-        var commonMapping: Map[String, Type] = Map()
-        for (commonName <- commonNames) {
-            val t1 = this.get(commonName)
-            val t2 = tc.get(commonName)
-            val unification = TypeChecker.unify(t1, t2)
-            unification match {
-                case Right((t, subst)) => {
-                    commonMapping = commonMapping.updated(commonName, t)
-                }
-                case Left(_) => {
-                    return Left(TypeError(s"cannot unify types ${t1.source} and ${t2.source}"))
-                }
-            }
-        }
-        val finalMapping = (this.bindings ++ tc.bindings) ++ commonMapping
-        Right(TypeContext(finalMapping))
-    }
-
     def subtract(tc: TypeContext): TypeContext = {
         val namesToRemove = tc.getNames()
         def f(acc: TypeContext, curr: String): TypeContext = {
             acc.without(curr)
         }
         namesToRemove.foldLeft(this)(f)
+    }
+
+    def intersectAndReturnSubst(tc: TypeContext): Either[Error, (TypeContext, Substitution)] = {
+        val commonNames = this.bindings.keys.toSeq.intersect(tc.bindings.keys.toSeq)
+        var commonMapping: Map[String, Type] = Map()
+        var currSubst: Substitution = List()
+        for (commonName <- commonNames) {
+            val t1 = this.get(commonName)
+            val t2 = tc.get(commonName)
+            val unification = TypeChecker.unify(t1, t2)
+            unification match {
+                case Right((t, subst)) => {
+                    commonMapping += commonName -> t
+                    currSubst ++= subst
+                }
+                case Left(_) => {
+                    return Left(TypeError(s"cannot unify types ${t1.source} and ${t2.source}"))
+                }
+            }
+        }
+        Right((TypeContext(commonMapping), currSubst))
+    }
+
+    def intersect(tc: TypeContext): Either[Error, TypeContext] = {
+        val result = this.intersectAndReturnSubst(tc)
+        ifNoTypeErrorMulti[(TypeContext, Substitution), TypeContext](result, result => {
+            val (tc, _) = result
+            Right(tc)
+        })
+    }
+
+    def unionAndReturnSubst(tc: TypeContext): Either[Error, (TypeContext, Substitution)] = {
+        val intersectionResult = this.intersectAndReturnSubst(tc)
+        ifNoTypeError[(TypeContext, Substitution)](intersectionResult, intersectionResult => {
+            val (intersectionTC, intersectionSubst) = intersectionResult
+            val finalMapping = (this.bindings ++ tc.bindings) ++ intersectionTC.bindings
+            Right((TypeContext(finalMapping), intersectionSubst))
+        })
+    }
+
+    def union(tc: TypeContext): Either[Error, TypeContext] = {
+        val result = this.unionAndReturnSubst(tc)
+        ifNoTypeErrorMulti[(TypeContext, Substitution), TypeContext](result, result => {
+            val (tc, _) = result
+            Right(tc)
+        })
+    }
+
+    def substitute(map: Substitution): TypeContext = {
+        val names = this.getNames()
+        var newBindings: Map[String, Type] = Map()
+        for (name <- names) {
+            newBindings = newBindings.updated(name, this.get(name).substitute(map))
+        }
+        TypeContext(newBindings)
     }
 
     def getNames(): Iterable[String] = {
@@ -74,6 +109,13 @@ object TypeContext {
 }
 
 object TypeChecker {
+    var genericTypeCounter = 0
+    def newGenericType(): Type = {
+        val result = GenericType(s"t${genericTypeCounter}")
+        genericTypeCounter += 1
+        result
+    }
+
     def ok(t: Type): Either[Error, (Type, TypeContext)] = {
         Right((t, TypeContext.empty))
     }
@@ -93,7 +135,7 @@ object TypeChecker {
                 // We can't infer the type of this name at this point.
                 // What if we're within a binding?
                 // Then the value won't be the same as in the env.
-                val t = GenericType("a")
+                val t = newGenericType()
                 val tc = TypeContext(Map(name -> t))
                 Right((t, tc))
             }
@@ -172,7 +214,7 @@ object TypeChecker {
 
     def inferSequence(env: TypeEnvironment, exprs: Seq[Expr]): Either[Error, (Type, TypeContext)] = {
         if (exprs.length == 0) {
-            ok(SequenceType(GenericType("a")))
+            ok(SequenceType(newGenericType()))
         } else {
             val subtypeInferences = exprs.map(infer(env, _))
             ifNoTypeErrors[(Type, TypeContext)](subtypeInferences, subtypeInferences => {
@@ -399,48 +441,46 @@ object TypeChecker {
             }
         })
     }
-    
-    // TODO: Hindley's algorithm (Lambda calc slides 15)
+
     def inferApply(env: TypeEnvironment, l: Expr, r: Expr): Either[Error, (Type, TypeContext)] = {
+        // Hindley's algorithm
         val lInference = infer(env, l)
         val rInference = infer(env, r)
-        ifNoTypeErrors[(Type, TypeContext)](
-            List(lInference, rInference),
-            inferences => {
-                var (lType, lTC) = inferences(0)
-                var (rType, rTC) = inferences(1)
-                rType = diversify(rType, lType)
-                val requiredLType = FunctionType(rType, GenericType("a"))
-                lType = diversify(lType, GenericType("a"))
-                rType = diversify(rType, GenericType("a"))
-                val attemptedLUnification = unify(lType, requiredLType)
-                ifNoTypeErrorMulti[(Type, Substitution), (Type, TypeContext)](
-                    attemptedLUnification,
-                    attemptedLUnification => {
-                        println(attemptedLUnification)
-                        val (unifiedLType, unifiedLTC) = attemptedLUnification
-                        unifiedLType match {
-                            case f @ FunctionType(argument, output) => {
-                                val attemptedRUnification = unify(argument, rType)
-                                attemptedRUnification match {
-                                    case Right((unifiedType, subst)) => {
-                                        val unionResult = lTC.union(rTC)
-                                        ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](
-                                            unionResult,
-                                            unionResult => Right((output.substitute(subst), unionResult))
-                                        )
-                                    }
-                                    case Left(_) => Left(TypeError(s"cannot call a function of type ${f.source} with an argument of type ${rType.source}"))
-                                }
-                            }
-                            case t => {
-                                Left(TypeError(s"cannot call an expression of type ${t.source}"))
-                            }
-                        }
+        ifNoTypeErrors[(Type, TypeContext)](List(lInference, rInference), inferences => {
+            val (lType, lTC) = inferences(0)
+            val (rType, rTC) = inferences(1)
+            // implicitly unifies C_1, ..., C_n with D_1, ..., D_n
+            val unionResult = lTC.unionAndReturnSubst(rTC)
+            ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](unionResult, unionResult => {
+                var (unionTC, unionSubst) = unionResult
+                lType match {
+                    case FunctionType(argument, output) => {
+                        // unify A with Q
+                        val unificationResult = unify(argument, rType)
+                        ifNoTypeErrorMulti[(Type, Substitution), (Type, TypeContext)](unificationResult, unificationResult => {
+                            val (unifiedArgument, subst) = unificationResult
+                            unionTC = unionTC.substitute(subst)
+                            val unifiedSubst = unionSubstitutions(unionSubst, subst)
+                            Right((output.substitute(unifiedSubst), unionTC))
+                        })                        
                     }
-                )
-            }
-        )
+                    case GenericType(name) => {
+                        // unify a with Q -> b
+                        val freshVar = newGenericType()
+                        val unificationResult = unify(lType, FunctionType(rType, freshVar))
+                        ifNoTypeErrorMulti[(Type, Substitution), (Type, TypeContext)](unificationResult, unificationResult => {
+                            val (unifiedArgument, subst) = unificationResult
+                            unionTC = unionTC.substitute(subst)
+                            val unifiedSubst = unionSubstitutions(unionSubst, subst)
+                            Right((freshVar.substitute(unifiedSubst), unionTC))
+                        })
+                    }
+                    case _ => {
+                        Left(TypeError(s"cannot call an expression of type ${lType.source}"))
+                    }
+                }
+            })
+        })
     }
 
     def inferIf(env: TypeEnvironment, condition: Expr, trueExpr: Expr, falseExpr: Expr): Either[Error, (Type, TypeContext)] = {
