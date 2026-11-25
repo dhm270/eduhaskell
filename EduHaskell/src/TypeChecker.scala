@@ -360,21 +360,43 @@ object TypeChecker {
                 }
                 op match {
                     case "+" | "-" | "*" | "/" | "^" => {
-                        lType match {
-                            case IntegerType() => {
-                                rType match {
-                                    case IntegerType() => ok(IntegerType())
-                                    case _ => e()
+                        // Attempt to unify the left operand with Integer
+                        val leftUnificationWithInt = unify(lType, IntegerType())
+                        leftUnificationWithInt match {
+                            case Right((_, subst1)) => {
+                                val rightUnificationWithInt = unify(rType.substitute(subst1), IntegerType())
+                                rightUnificationWithInt match {
+                                    case Right((_, subst2)) => {
+                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
+                                        val attemptedTCUnification = lTC.union(rTC)
+                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                                            Right((IntegerType(), attemptedTCUnification.substitute(unifiedSubst)))
+                                        })
+                                    }
+                                    case Left(_) => {}
                                 }
                             }
-                            case RealType() => {
-                                rType match {
-                                    case RealType() => ok(RealType())
-                                    case _ => e()
-                                }
-                            }
-                            case _ => e1()
+                            case Left(_) => {}
                         }
+                        // If it's not Integer, then let's try Real instead
+                        val leftUnificationWithReal = unify(lType, RealType())
+                        leftUnificationWithReal match {
+                            case Right((_, subst1)) => {
+                                val rightUnificationWithReal = unify(rType.substitute(subst1), RealType())
+                                rightUnificationWithReal match {
+                                    case Right((_, subst2)) => {
+                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
+                                        val attemptedTCUnification = lTC.union(rTC)
+                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                                            Right((RealType(), attemptedTCUnification.substitute(unifiedSubst)))
+                                        })
+                                    }
+                                    case Left(_) => return e()
+                                }
+                            }
+                            case Left(_) => {}
+                        }
+                        e1()
                     }
                     case ":" => {
                         rType match {
@@ -631,6 +653,7 @@ object TypeChecker {
                 undeclaredVars ++= List(variable)
             } else {
                 val typeInEnv = env.find(variable)
+                val typeInTC = tc.get(variable)
                 val unification = unify(typeInEnv, typeInTC)
                 unification match {
                     case Left(_) => undeclaredVars ++= List(variable)
