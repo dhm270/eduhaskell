@@ -540,13 +540,13 @@ object TypeChecker {
             inferences => {
                 val (argumentType, argumentTC) = inferences(0)
                 val (outputType, outputTC) = inferences(1)
-                val partialFunType = FunctionType(argumentType, outputType)
-                // We ultimately want to return the type context for the `PartialFun`,
-                // i.e. not including any variables defined in the pattern matching.
-                // However, before we remove them, we first need to check that they
-                // are unifiable with their usage in the function body.
-                val attemptedUnification = argumentTC.union(outputTC)
-                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedUnification, _ => {
+                val attemptedUnification = argumentTC.unionAndReturnSubst(outputTC)
+                ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](attemptedUnification, attemptedUnification => {
+                    val (unifiedTC, subst) = attemptedUnification
+                    val partialFunType = FunctionType(
+                        argumentType.substitute(subst),
+                        outputType.substitute(subst)
+                    )
                     val partialFunTC = outputTC.subtract(argumentTC)
                     Right((partialFunType, partialFunTC))
                 })
