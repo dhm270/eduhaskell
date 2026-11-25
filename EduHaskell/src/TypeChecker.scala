@@ -204,11 +204,10 @@ object TypeChecker {
         val inference = infer(env, e)
         ifNoTypeErrorMulti[(Type, TypeContext), Type](inference, inference => {
             val (t, tc) = inference
-            val undeclaredVariables = getUndeclaredVariables(env, tc)
-            if (undeclaredVariables.isEmpty) {
-                Right(t)
-            } else {
-                Left(UndeclaredVariable(undeclaredVariables(0))) // TODO: report all undeclared names
+            val tcSubst = unifyUndeclaredVariables(env, tc)
+            tcSubst match {
+                case Right(tcSubst) => Right(t.substitute(tcSubst))
+                case Left(_) => tcSubst.asInstanceOf[Either[Error, Type]]
             }
         })
     }
@@ -640,8 +639,11 @@ object TypeChecker {
                 val inference = infer(extendedEnvironment, expr)
                 ifNoTypeError[(Type, TypeContext)](inference, inference => {
                     val (t, tc) = inference
-                    val modifiedTC = tc.subtract(TypeContext(newNames))
-                    Right((t, modifiedTC))
+                    val undeclaredVarsSubst = unifyUndeclaredVariables(extendedEnvironment, tc)
+                    ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](undeclaredVarsSubst, undeclaredVarsSubst => {
+                        val modifiedTC = tc.subtract(TypeContext(newNames))
+                        Right((t.substitute(undeclaredVarsSubst), modifiedTC.substitute(undeclaredVarsSubst)))
+                    })
                 })
             }
         )
@@ -738,24 +740,24 @@ object TypeChecker {
         substA ++ substB
     }
 
-    def getUndeclaredVariables(env: TypeEnvironment, tc: TypeContext): Seq[String] = {
-        // Returns all the names which cannot be unified with a matching name
-        // in the `TypeEnvironment`.
-        var undeclaredVars: List[String] = List()
+    def unifyUndeclaredVariables(env: TypeEnvironment, tc: TypeContext): Either[Error, Substitution] = {
+        var currSubst: Substitution = List()
         for (variable <- tc.getNames()) {
             if (!env.containsName(variable)) {
-                undeclaredVars ++= List(variable)
+                return Left(UndeclaredVariable(variable))
             } else {
                 val typeInEnv = env.find(variable)
                 val typeInTC = tc.get(variable)
-                val unification = unify(typeInEnv, typeInTC)
-                unification match {
-                    case Left(_) => undeclaredVars ++= List(variable)
-                    case Right(_) => {}
+                val attemptedUnification = unify(typeInEnv, typeInTC)
+                attemptedUnification match {
+                    case Right((t, s)) => {
+                        currSubst = unionSubstitutions(currSubst, s)
+                    }
+                    case Left(_) => return attemptedUnification.asInstanceOf[Either[Error, Substitution]]
                 }
             }
         }
-        undeclaredVars
+        Right(currSubst)
     }
 
     def unify(inputA: Type, inputB: Type): Either[Error, (Type, Substitution)] = {
