@@ -399,51 +399,101 @@ object TypeChecker {
                         e1()
                     }
                     case ":" => {
-                        rType match {
-                            case SequenceType(subtype) => {
-                                if (typesEqual(lType, subtype)) {
-                                    ok(SequenceType(subtype))
-                                } else {
-                                    e1()
+                        // Attempt to unify the right operand with [a]
+                        val a = newGenericType()
+                        val rightUnificationWithSeqA = unify(rType, SequenceType(a))
+                        rightUnificationWithSeqA match {
+                            case Right((SequenceType(subtype), subst1)) => {
+                                // Attempt to unify the left operand with the subtype we just got
+                                val leftUnificationWithSubtype = unify(lType, subtype)
+                                leftUnificationWithSubtype match {
+                                    case Right((_, subst2)) => {
+                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
+                                        val attemptedTCUnification = lTC.union(rTC)
+                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                                            Right((SequenceType(subtype), attemptedTCUnification.substitute(unifiedSubst)))
+                                        })
+                                    }
+                                    case Left(_) => {}
                                 }
                             }
-                            case _ => e1()
+                            case _ => {}
                         }
+                        e1()
                     }
                     case "==" => {
-                        if (typesEqual(lType, rType)) {
-                            ok(BooleanType())
-                        } else {
-                            e()
+                        // Attempt to unify the types
+                        val unification = unify(lType, rType)
+                        unification match {
+                            case Right((_, subst)) => {
+                                val attemptedTCUnification = lTC.union(rTC)
+                                return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                                    Right((BooleanType(), attemptedTCUnification.substitute(subst)))
+                                })
+                            }
+                            case Left(_) => {}
                         }
+                        e()
                     }
                     case "<" | "<=" | ">=" | ">" => {
-                        lType match {
-                            case IntegerType() => {
-                                rType match {
-                                    case IntegerType() => ok(BooleanType())
-                                    case _ => e()
+                        // Attempt to unify the left operand with Integer
+                        val leftUnificationWithInt = unify(lType, IntegerType())
+                        leftUnificationWithInt match {
+                            case Right((_, subst1)) => {
+                                val rightUnificationWithInt = unify(rType.substitute(subst1), IntegerType())
+                                rightUnificationWithInt match {
+                                    case Right((_, subst2)) => {
+                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
+                                        val attemptedTCUnification = lTC.union(rTC)
+                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                                            Right((BooleanType(), attemptedTCUnification.substitute(unifiedSubst)))
+                                        })
+                                    }
+                                    case Left(_) => {}
                                 }
                             }
-                            case RealType() => {
-                                rType match {
-                                    case RealType() => ok(BooleanType())
-                                    case _ => e()
-                                }
-                            }
-                            case _ => e1()
+                            case Left(_) => {}
                         }
+                        // If it's not Integer, then let's try Real instead
+                        val leftUnificationWithReal = unify(lType, RealType())
+                        leftUnificationWithReal match {
+                            case Right((_, subst1)) => {
+                                val rightUnificationWithReal = unify(rType.substitute(subst1), RealType())
+                                rightUnificationWithReal match {
+                                    case Right((_, subst2)) => {
+                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
+                                        val attemptedTCUnification = lTC.union(rTC)
+                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                                            Right((BooleanType(), attemptedTCUnification.substitute(unifiedSubst)))
+                                        })
+                                    }
+                                    case Left(_) => {}
+                                }
+                            }
+                            case Left(_) => {}
+                        }
+                        e1()
                     }
                     case "||" | "&&" => {
-                        lType match {
-                            case BooleanType() => {
-                                rType match {
-                                    case BooleanType() => ok(BooleanType())
-                                    case _ => e1()
+                        // Attempt to unify the left operand with Boolean
+                        val leftUnificationWithBool = unify(lType, BooleanType())
+                        leftUnificationWithBool match {
+                            case Right((_, subst1)) => {
+                                val rightUnificationWithBool = unify(rType.substitute(subst1), BooleanType())
+                                rightUnificationWithBool match {
+                                    case Right((_, subst2)) => {
+                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
+                                        val attemptedTCUnification = lTC.union(rTC)
+                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                                            Right((BooleanType(), attemptedTCUnification.substitute(unifiedSubst)))
+                                        })
+                                    }
+                                    case Left(_) => {}
                                 }
                             }
-                            case _ => e1()
+                            case Left(_) => {}
                         }
+                        e1()
                     }
                 }
             }
