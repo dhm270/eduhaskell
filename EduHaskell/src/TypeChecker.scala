@@ -374,6 +374,18 @@ object TypeChecker {
                         unionResult => Right((t, unionResult))
                     )
                 }
+                def unifyAndYield(subst1: Substitution, subst2: Substitution, yieldValue: Type): Either[Error, (Type, TypeContext)] = {
+                    val unifiedSubst = unionSubstitutions(subst1, subst2)
+                    ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unifiedSubst, unifiedSubst => {
+                        unifyTCAndYield(unifiedSubst, yieldValue)
+                    })
+                }
+                def unifyTCAndYield(subst: Substitution, yieldValue: Type): Either[Error, (Type, TypeContext)] = {
+                    val attemptedTCUnification = lTC.union(rTC)
+                    ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                        Right((yieldValue, attemptedTCUnification.substitute(subst)))
+                    })
+                }
                 op match {
                     case "+" | "-" | "*" | "/" | "^" => {
                         // Attempt to unify the left operand with Integer
@@ -383,11 +395,7 @@ object TypeChecker {
                                 val rightUnificationWithInt = unify(rType.substitute(subst1), IntegerType())
                                 rightUnificationWithInt match {
                                     case Right((_, subst2)) => {
-                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
-                                        val attemptedTCUnification = lTC.union(rTC)
-                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
-                                            Right((IntegerType(), attemptedTCUnification.substitute(unifiedSubst)))
-                                        })
+                                        return unifyAndYield(subst1, subst2, IntegerType())
                                     }
                                     case Left(_) => {}
                                 }
@@ -401,11 +409,7 @@ object TypeChecker {
                                 val rightUnificationWithReal = unify(rType.substitute(subst1), RealType())
                                 rightUnificationWithReal match {
                                     case Right((_, subst2)) => {
-                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
-                                        val attemptedTCUnification = lTC.union(rTC)
-                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
-                                            Right((RealType(), attemptedTCUnification.substitute(unifiedSubst)))
-                                        })
+                                        return unifyAndYield(subst1, subst2, RealType())
                                     }
                                     case Left(_) => return e()
                                 }
@@ -424,11 +428,7 @@ object TypeChecker {
                                 val leftUnificationWithSubtype = unify(lType, subtype)
                                 leftUnificationWithSubtype match {
                                     case Right((unifiedSubtype, subst2)) => {
-                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
-                                        val attemptedTCUnification = lTC.union(rTC)
-                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
-                                            Right((SequenceType(unifiedSubtype), attemptedTCUnification.substitute(unifiedSubst)))
-                                        })
+                                        return unifyAndYield(subst1, subst2, SequenceType(unifiedSubtype))
                                     }
                                     case Left(_) => {}
                                 }
@@ -442,10 +442,7 @@ object TypeChecker {
                         val unification = unify(lType, rType)
                         unification match {
                             case Right((_, subst)) => {
-                                val attemptedTCUnification = lTC.union(rTC)
-                                return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
-                                    Right((BooleanType(), attemptedTCUnification.substitute(subst)))
-                                })
+                                return unifyTCAndYield(subst, BooleanType())
                             }
                             case Left(_) => {}
                         }
@@ -459,11 +456,7 @@ object TypeChecker {
                                 val rightUnificationWithInt = unify(rType.substitute(subst1), IntegerType())
                                 rightUnificationWithInt match {
                                     case Right((_, subst2)) => {
-                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
-                                        val attemptedTCUnification = lTC.union(rTC)
-                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
-                                            Right((BooleanType(), attemptedTCUnification.substitute(unifiedSubst)))
-                                        })
+                                        return unifyAndYield(subst1, subst2, BooleanType())
                                     }
                                     case Left(_) => {}
                                 }
@@ -477,11 +470,7 @@ object TypeChecker {
                                 val rightUnificationWithReal = unify(rType.substitute(subst1), RealType())
                                 rightUnificationWithReal match {
                                     case Right((_, subst2)) => {
-                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
-                                        val attemptedTCUnification = lTC.union(rTC)
-                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
-                                            Right((BooleanType(), attemptedTCUnification.substitute(unifiedSubst)))
-                                        })
+                                        return unifyAndYield(subst1, subst2, BooleanType())
                                     }
                                     case Left(_) => {}
                                 }
@@ -498,11 +487,7 @@ object TypeChecker {
                                 val rightUnificationWithBool = unify(rType.substitute(subst1), BooleanType())
                                 rightUnificationWithBool match {
                                     case Right((_, subst2)) => {
-                                        val unifiedSubst = unionSubstitutions(subst1, subst2)
-                                        val attemptedTCUnification = lTC.union(rTC)
-                                        return ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
-                                            Right((BooleanType(), attemptedTCUnification.substitute(unifiedSubst)))
-                                        })
+                                        return unifyAndYield(subst1, subst2, BooleanType())
                                     }
                                     case Left(_) => {}
                                 }
@@ -563,7 +548,9 @@ object TypeChecker {
                             val (unifiedArgument, subst) = unificationResult
                             unionTC = unionTC.substitute(subst)
                             val unifiedSubst = unionSubstitutions(unionSubst, subst)
-                            Right((output.substitute(unifiedSubst), unionTC))
+                            ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unifiedSubst, unifiedSubst => {
+                                Right((output.substitute(unifiedSubst), unionTC))
+                            })
                         })                        
                     }
                     case GenericType(name) => {
@@ -574,7 +561,9 @@ object TypeChecker {
                             val (unifiedArgument, subst) = unificationResult
                             unionTC = unionTC.substitute(subst)
                             val unifiedSubst = unionSubstitutions(unionSubst, subst)
-                            Right((freshVar.substitute(unifiedSubst), unionTC))
+                            ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unifiedSubst, unifiedSubst => {
+                                Right((freshVar.substitute(unifiedSubst), unionTC))
+                            })
                         })
                     }
                     case _ => {
@@ -603,11 +592,13 @@ object TypeChecker {
                         attemptedUnification match {
                             case Right((unifiedType, subst2)) => {
                                 val unifiedSubst = unionSubstitutions(subst1, subst2)
-                                val tc = TypeContext.unionAll(
-                                    List(conditionTC, trueTC, falseTC)
-                                )
-                                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](tc, tc => {
-                                    Right((unifiedType, tc.substitute(unifiedSubst)))
+                                ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unifiedSubst, unifiedSubst => {
+                                    val tc = TypeContext.unionAll(
+                                        List(conditionTC, trueTC, falseTC)
+                                    )
+                                    ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](tc, tc => {
+                                        Right((unifiedType, tc.substitute(unifiedSubst)))
+                                    })
                                 })
                             }
                             case _ => Left(TypeError("both arms of an if-statement must be of the same type"))
@@ -749,9 +740,35 @@ object TypeChecker {
         }
     }
 
-    def unionSubstitutions(substA: Substitution, substB: Substitution): Substitution = {
-        // TODO: is this definitely correct?
-        substA ++ substB
+    def unionSubstitutions(substA: Substitution, substB: Substitution): Either[Error, Substitution] = {
+        // This assumes that all type variables are distinct when declared.
+        // Therefore, if we see two subsitutions for the same type variable,
+        // then we need to unify them.
+        val namesA = substA.map(_._1)
+        val namesB = substB.map(_._1)
+        val overlappingNames = namesA.intersect(namesB)
+        var finalSubst: Substitution = List()
+        for (subst <- (substA ++ substB)) {
+            val (name, to) = subst
+            if (!overlappingNames.contains(name)) finalSubst ++= List(subst)
+        }
+        for (overlappingName <- overlappingNames) {
+            val thisNameSubstA = substA.filter(_._1 == overlappingName).map(_._2)
+            val thisNameSubstB = substB.filter(_._1 == overlappingName).map(_._2)
+            val allTypes = thisNameSubstA ++ thisNameSubstB
+            val attemptedUnification = unifyAll(allTypes)
+            attemptedUnification match {
+                case Right((t, unificationSubst)) => {
+                    val attemptedSubstUnification = unionSubstitutions(finalSubst, unificationSubst)
+                    attemptedSubstUnification match {
+                        case Right(s) => finalSubst = s
+                        case Left(_) => return attemptedSubstUnification
+                    }
+                }
+                case Left(_) => return attemptedUnification.asInstanceOf[Either[Error, Substitution]]
+            }
+        }
+        Right(finalSubst)
     }
 
     def unifyUndeclaredVariables(env: TypeEnvironment, tc: TypeContext): Either[Error, Substitution] = {
@@ -765,7 +782,11 @@ object TypeChecker {
                 val attemptedUnification = unify(typeInEnv, typeInTC)
                 attemptedUnification match {
                     case Right((t, s)) => {
-                        currSubst = unionSubstitutions(currSubst, s)
+                        val attemptedSubstUnification = unionSubstitutions(currSubst, s)
+                        attemptedSubstUnification match {
+                            case Right(s) => currSubst = s
+                            case Left(_) => return attemptedSubstUnification
+                        }
                     }
                     case Left(_) => return attemptedUnification.asInstanceOf[Either[Error, Substitution]]
                 }
@@ -804,24 +825,31 @@ object TypeChecker {
                     case TupleType(subtypesB) => {
                         if (subtypesA.length != subtypesB.length) return Left(TypeError(s"${a.source} and ${b.source} are tuple types of different arities, so are not unifiable"))
 
-                        var subst: Substitution = List()
+                        var subst: Either[Error, Substitution] = Right(List())
                         def addToSubst(subst1: Substitution): Unit = {
-                            subst = unionSubstitutions(subst, subst1)
+                            subst match {
+                                case Right(s) => subst = unionSubstitutions(s, subst1)
+                                case Left(_) => {}
+                            }
                         }
                         val unifiedSubtypes = subtypesA.zip(subtypesB).map({ case (a, b) => {
-                            val result = unify(a.substitute(subst), b.substitute(subst))
-                            result match {
-                                case Left(_) => {}
-                                case Right((r, subst1)) => addToSubst(subst1)
+                            subst match {
+                                case Right(subst) => {
+                                    val result = unify(a.substitute(subst), b.substitute(subst))
+                                    result match {
+                                        case Left(_) => {}
+                                        case Right((r, subst1)) => addToSubst(subst1)
+                                    }
+                                    result
+                                }
+                                case Left(_) => subst.asInstanceOf[Either[Error, (Type, Substitution)]]
                             }
-                            result
                         }})
-                        ifNoTypeErrors[(Type, Substitution)](
-                            unifiedSubtypes,
-                            unifiedExtracted => {
-                                Right((TupleType(unifiedExtracted.map(_._1)), subst))
-                            }
-                        )
+                        ifNoTypeErrors[(Type, Substitution)](unifiedSubtypes, unifiedSubtypes => {
+                            ifNoTypeErrorMulti[Substitution, (Type, Substitution)](subst, subst => {
+                                Right((TupleType(unifiedSubtypes.map(_._1)), subst))
+                            })
+                        })
                     }
                     case _ => e()
                 }
@@ -846,14 +874,14 @@ object TypeChecker {
                             val map = List((generic.asInstanceOf[GenericType].name, other))
                             val substOutputA = outputA.substitute(map)
                             val substOutputB = outputB.substitute(map)
-                            val unificationResult = unify(substOutputA, substOutputB)
-                            ifNoTypeError[(Type, Substitution)](
-                                unificationResult,
-                                unifiedExtracted => {
-                                    val (unifiedType, subst) = unifiedExtracted
-                                    Right((FunctionType(other.substitute(subst), unifiedType), unionSubstitutions(map, subst)))
-                                }
-                            )
+                            val attemptedUnification = unify(substOutputA, substOutputB)
+                            ifNoTypeError[(Type, Substitution)](attemptedUnification, attemptedUnification => {
+                                val (unifiedType, subst) = attemptedUnification
+                                val attemptedSubstUnification = unionSubstitutions(map, subst)
+                                ifNoTypeErrorMulti[Substitution, (Type, Substitution)](attemptedSubstUnification, attemptedSubstUnification => {
+                                    Right((FunctionType(other.substitute(subst), unifiedType), attemptedSubstUnification))
+                                })
+                            })
                         }
                         if (argumentA.isInstanceOf[GenericType]) {
                             f(argumentA, argumentB)
@@ -870,10 +898,13 @@ object TypeChecker {
                                         outputUnificationResult,
                                         unifiedOutputExtracted => {
                                             val subst2 = unifiedOutputExtracted._2
-                                            Right((
-                                                FunctionType(unifiedArgumentExtracted._1.substitute(subst2), unifiedOutputExtracted._1),
-                                                unionSubstitutions(subst1, subst2)
-                                            ))
+                                            val unifiedSubst = unionSubstitutions(subst1, subst2)
+                                            ifNoTypeErrorMulti[Substitution, (Type, Substitution)](unifiedSubst, unifiedSubst => {
+                                                Right((
+                                                    FunctionType(unifiedArgumentExtracted._1.substitute(subst2), unifiedOutputExtracted._1),
+                                                    unifiedSubst
+                                                ))
+                                            })
                                         }
                                     )
                                 }
@@ -906,7 +937,9 @@ object TypeChecker {
                 ifNoTypeError[(Type, Substitution)](attemptedUnification, attemptedUnification => {
                     val (unifiedType, subst) = attemptedUnification
                     val unifiedSubst = unionSubstitutions(accSubst, subst)
-                    Right((unifiedType, unifiedSubst))
+                    ifNoTypeErrorMulti[Substitution, (Type, Substitution)](unifiedSubst, unifiedSubst => {
+                        Right((unifiedType, unifiedSubst))
+                    })
                 })
             })
         }
