@@ -13,50 +13,40 @@ object values {
         val eagerSource: String
         override lazy val toString: String = eagerSource
         def isNumber(): Boolean = false
-
-        def getType(): String = "Unknown"
     }
 
     case class IntValue(value: Long) extends Value {
         val eagerSource = value.toString
         override def isNumber(): Boolean = true
-        override def getType(): String = "Integer"
     }
 
     case class RealValue(value: Double) extends Value {
         lazy val eagerSource = value.toString
         override def isNumber(): Boolean = true
-        override def getType(): String = "Real"
     }
 
     case class CharValue(value: Char) extends Value {
         lazy val eagerSource = s"'${value}'"
-        override def getType(): String = "Character"
     }
 
     case class BooleanValue(value: Boolean) extends Value {
         lazy val eagerSource = value.toString
-        override def getType(): String = "Boolean"
     }
 
     case class FunctionValue(func: LazyValue => EvaluateContinuation) extends Value {
         lazy val eagerSource = "<function value>"
-        override def getType(): String = "Function" // TODO: better type
     }
 
     case class ConsValue(head: LazyValue, tail: LazyValue) extends Value {
         lazy val eagerSource = s"${head.eagerSource} : ${tail.eagerSource}"
-        override def getType(): String = "Cons" // TODO: better type
     }
 
     case class NilValue() extends Value {
         lazy val eagerSource = "nil"
-        override def getType(): String = "Nil" // TODO: better type
     }
 
     case class TupleValue(vals: Seq[LazyValue]) extends Value {
         lazy val eagerSource = vals.map(_.eagerSource).mkString("(", ", ", ")")
-        override def getType(): String = "Tuple" // TODO: better type
     }
 
     case class LazyValue(private var getter: () => EvaluateContinuation) {

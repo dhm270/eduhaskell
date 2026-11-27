@@ -404,8 +404,7 @@ object Evaluator {
                     val nextValue = evaluate(env, next.get)
                     nextValue match {
                         case Right(IntValue(next)) => step = next - start
-                        case Right(r) => return Result(Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, next is of type ${r.getType()}")))
-                        case x => return Result(x)
+                        case Left(_) => return Result(nextValue)
                     }
                 }
                 var extractedEnd: Option[Long] = None
@@ -413,8 +412,7 @@ object Evaluator {
                     val endValue = evaluate(env, end.get)
                     endValue match {
                         case Right(IntValue(endInt)) => extractedEnd = Some(endInt)
-                        case Right(r) => return Result(Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, end is of type ${r.getType()}")))
-                        case x => return Result(x)
+                        case Left(_) => return Result(endValue)
                     }
                 }
                 Result(generateIntArithmeticSequence(start, step, extractedEnd))
@@ -426,8 +424,7 @@ object Evaluator {
                     val nextValue = evaluate(env, next.get)
                     nextValue match {
                         case Right(RealValue(next)) => step = next - start
-                        case Right(r) => return Result(Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, next is of type ${r.getType()}")))
-                        case x => return Result(x)
+                        case Left(_) => return Result(nextValue)
                     }
                 }
                 var extractedEnd: Option[Double] = None
@@ -435,14 +432,12 @@ object Evaluator {
                     val endValue = evaluate(env, end.get)
                     endValue match {
                         case Right(RealValue(endReal)) => extractedEnd = Some(endReal)
-                        case Right(r) => return Result(Left(TypeError(s"mismatched types in arithmetic sequence declaration: start is of type ${s.getType()}, end is of type ${r.getType()}")))
-                        case x => return Result(x)
+                        case Left(_) => return Result(endValue)
                     }
                 }
                 Result(generateRealArithmeticSequence(start, step, extractedEnd))
             }
-            case Right(s) => Result(Left(TypeError(s"cannot declare an arithmetic sequence of type ${s.getType()}")))
-            case x => Result(x)
+            case Left(_) => return Result(startValue)
         }
     }
 
@@ -492,8 +487,7 @@ object Evaluator {
                             }
                         }
                         case Right(NilValue()) => Right(NilValue())
-                        case Right(x) => Left(TypeError(s"cannot qualify a sequence comprehension using an expression of type ${x.getType()}"))
-                        case x => x
+                        case Left(_) => return generator
                     }
                 }
                 Result(generateOver(evaluate(env, generatorExpr)))
@@ -797,8 +791,7 @@ object Evaluator {
                 eValue match {
                     case Right(IntValue(int)) => Result(Right(IntValue(-int)))
                     case Right(RealValue(real)) => Result(Right(RealValue(-real)))
-                    case Right(x) => Result(Left(TypeError(s"cannot negate a value of type ${x.getType()}")))
-                    case x => Result(x)
+                    case Left(_) => Result(eValue)
                 }
             }
         }
@@ -814,8 +807,7 @@ object Evaluator {
                 }
                 func(LazyValue(f))
             }
-            case Right(x) => Result(Left(TypeError(s"cannot call a value of type ${x.getType()}")))
-            case x => Result(x)
+            case Left(_) => Result(lValue)
         }
     }
 
@@ -829,8 +821,7 @@ object Evaluator {
                     Closure(env, falseExpr)
                 }
             }
-            case Right(x) => Result(Left(TypeError(s"if-statement condition is of type ${x.getType()}, but it should be ${BooleanValue(true).getType()}")))
-            case x => Result(x)
+            case Left(_) => Result(conditionValue)
         }
     }
 
