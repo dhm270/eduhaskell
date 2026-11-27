@@ -304,13 +304,54 @@ object TypeChecker {
 
         qualifierInQuestion match {
             case SequenceComprehensionGenerator(pattern, generatorExpr) => {
+                val patternInference = infer(env, pattern)
                 val generatorInference = infer(env, generatorExpr)
-                ifNoTypeError[(Type, TypeContext)](generatorInference, generatorInference => {
-                    val (generatorType, tc) = generatorInference
-                    generatorType match {
-                        case SequenceType(subtype) => {
-                            // TODO: matchAndExtendEnvironment ...
-                            Left(NotImplemented())
+                ifNoTypeErrors[(Type, TypeContext)](List(patternInference, generatorInference), inferences => {
+                    val (patternType, patternTC) = inferences(0)
+                    val (generatorType, generatorTC) = inferences(1)
+                    val generatorUnificationWithSeq = unify(generatorType, SequenceType(newGenericType()))
+                    generatorUnificationWithSeq match {
+                        case Right((SequenceType(generatorSubtype), generatorUnificationSubst)) => {
+                            // Unify the type contexts of pattern matching (`patternTC`)
+                            // and the generator (`generatorTC`)
+                            val attemptedUnification = patternTC.unionAndReturnSubst(generatorTC)
+                            ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](attemptedUnification, attemptedUnification => {
+                                var (unifiedTC, unifiedSubst) = attemptedUnification
+                                // Include `generatorUnificationSubst` in our accumulating `unifiedSubst`
+                                ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unionSubstitutions(unifiedSubst, generatorUnificationSubst), unifiedSubst => {
+                                    // Unify the types of the pattern and the subtype of the generator
+                                    // i.e. if we have generator `x <- xs` and `xs` is `SequenceType(a)`,
+                                    // then we unify the type of x with `a`.
+                                    val subtypeUnification = unify(patternType, generatorSubtype)
+                                    ifNoTypeErrorMulti[(Type, Substitution), (Type, TypeContext)](subtypeUnification, subtypeUnification => {
+                                        val (unifiedGeneratorSubtype, subtypeSubst) = subtypeUnification
+                                        // Include `subtypeSubst` in our accumulating `unifiedSubst`
+                                        ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unionSubstitutions(unifiedSubst, subtypeSubst), unifiedSubst => {
+                                            // Infer the type of the sequence comprehension without this
+                                            // generator ("smaller sequence comprehension").
+                                            // This will be our return type.
+                                            val inference = infer(env, SequenceComprehension(expr, remainingQualifiers))
+                                            ifNoTypeError[(Type, TypeContext)](inference, inference => {
+                                                val (returnType, smallerListTC) = inference
+                                                // Unify the type contexts of the smaller sequence comprehension
+                                                // and our accumulating type context.
+                                                val attemptedTCUnification = unifiedTC.unionAndReturnSubst(smallerListTC)
+                                                ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                                                    val (unifiedTC1, subst1) = attemptedTCUnification
+                                                    unifiedTC = unifiedTC1
+                                                    // Include `subst1` in our accumulating `unifiedSubst`.
+                                                    ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unionSubstitutions(unifiedSubst, subst1), unifiedSubst => {
+                                                        // Remove the locally defined variables from the free variables
+                                                        // of the type context.
+                                                        val compTC = unifiedTC.subtract(patternTC)
+                                                        Right((returnType.substitute(unifiedSubst), compTC.substitute(unifiedSubst)))
+                                                    })
+                                                })
+                                            })
+                                        })
+                                    })
+                                })
+                            })
                         }
                         case _ => Left(TypeError(s"cannot use an expression of type ${generatorType} as a generator in a sequence comprehension"))
                     }
@@ -338,7 +379,7 @@ object TypeChecker {
                                 val (t, tc1) = inference
                                 val unionResult = tc.union(tc1)
                                 ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](unionResult, unionResult => {
-                                    Right((t, unionResult.substitute(subst)))
+                                    Right((t.substitute(subst), unionResult.substitute(subst)))
                                 })
                             })
                         }
@@ -769,6 +810,17 @@ object TypeChecker {
             }
         }
         Right(finalSubst)
+    }
+
+    def unionAllSubstitutions(substs: Seq[Substitution]): Either[Error, Substitution] = {
+        def f(acc: Either[Error, Substitution], curr: Substitution): Either[Error, Substitution] = {
+            acc match {
+                case Right(acc) => unionSubstitutions(acc, curr)
+                case Left(_) => acc
+            }
+        }
+        val x: Either[Error, Substitution] = Right(List())
+        substs.foldLeft(x)(f)
     }
 
     def unifyUndeclaredVariables(env: TypeEnvironment, tc: TypeContext): Either[Error, Substitution] = {
