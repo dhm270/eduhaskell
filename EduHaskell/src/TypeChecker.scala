@@ -50,28 +50,12 @@ case class TypeContext(bindings: Map[String, Type]) {
         Right((TypeContext(commonMapping), currSubst))
     }
 
-    def intersect(tc: TypeContext): Either[Error, TypeContext] = {
-        val result = this.intersectAndReturnSubst(tc)
-        ifNoTypeErrorMulti[(TypeContext, Substitution), TypeContext](result, result => {
-            val (tc, _) = result
-            Right(tc)
-        })
-    }
-
     def unionAndReturnSubst(tc: TypeContext): Either[Error, (TypeContext, Substitution)] = {
         val intersectionResult = this.intersectAndReturnSubst(tc)
         ifNoTypeError[(TypeContext, Substitution)](intersectionResult, intersectionResult => {
             val (intersectionTC, intersectionSubst) = intersectionResult
             val finalMapping = (this.bindings ++ tc.bindings) ++ intersectionTC.bindings
             Right((TypeContext(finalMapping), intersectionSubst))
-        })
-    }
-
-    def union(tc: TypeContext): Either[Error, TypeContext] = {
-        val result = this.unionAndReturnSubst(tc)
-        ifNoTypeErrorMulti[(TypeContext, Substitution), TypeContext](result, result => {
-            val (tc, _) = result
-            Right(tc)
         })
     }
 
@@ -96,14 +80,23 @@ case class TypeContext(bindings: Map[String, Type]) {
 object TypeContext {
     def empty: TypeContext = TypeContext(Map())
 
-    def unionAll(contexts: Seq[TypeContext]): Either[Error, TypeContext] = {
-        def f(acc: Either[Error, TypeContext], curr: TypeContext): Either[Error, TypeContext] = {
+    def unionAllAndReturnSubst(contexts: Seq[TypeContext]): Either[Error, (TypeContext, Substitution)] = {
+        def f(acc: Either[Error, (TypeContext, Substitution)], curr: TypeContext): Either[Error, (TypeContext, Substitution)] = {
             acc match {
                 case Left(_) => acc
-                case Right(acc) => acc.union(curr)
+                case Right((tc, subst)) => {
+                    val attemptedTCUnification = tc.unionAndReturnSubst(curr)
+                    ifNoTypeError[(TypeContext, Substitution)](attemptedTCUnification, attemptedTCUnification => {
+                        val (tc1, subst1) = attemptedTCUnification
+                        val unifiedSubst = TypeChecker.unionSubstitutions(subst, subst1)
+                        ifNoTypeErrorMulti[Substitution, (TypeContext, Substitution)](unifiedSubst, unifiedSubst => {
+                            Right((tc1, unifiedSubst))
+                        })
+                    })
+                }
             }
         }
-        val x: Either[Error, TypeContext] = Right(TypeContext.empty)
+        val x: Either[Error, (TypeContext, Substitution)] = Right((TypeContext.empty, List()))
         contexts.foldLeft(x)(f)
     }
 }
@@ -153,18 +146,16 @@ object TypeChecker {
                 if (exprs.length == 1) {
                     infer(env, exprs(0))
                 } else {
-                    // TODO: fix e.g. `f x = (x, x + 1)`
                     val subtypeInferences = exprs.map(expr => infer(env, expr))
-                    ifNoTypeErrors[(Type, TypeContext)](
-                        subtypeInferences,
-                        subtypeInferences => {
-                            val subtypes = subtypeInferences.map(_._1)
-                            val tc = TypeContext.unionAll(subtypeInferences.map(_._2))
-                            ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](tc, tc => {
-                                Right((TupleType(subtypes), tc))
-                            })
-                        }
-                    )
+                    ifNoTypeErrors[(Type, TypeContext)](subtypeInferences, subtypeInferences => {
+                        val subtypes = subtypeInferences.map(_._1)
+                        val attemptedTCUnification = TypeContext.unionAllAndReturnSubst(subtypeInferences.map(_._2))
+                        ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                            val (tc, subst) = attemptedTCUnification
+                            val substitutedSubtypes = subtypes.map(_.substitute(subst))
+                            Right((TupleType(substitutedSubtypes), tc))
+                        })
+                    })
                 }
             }
             case s @ Sequence(exprs) => {
@@ -222,9 +213,10 @@ object TypeChecker {
                     val (t, tc) = subtypeInferences(0)
                     Right((SequenceType(t), tc))
                 } else {
-                    val tc = TypeContext.unionAll(subtypeInferences.map(_._2))
-                    ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](tc, tc => {
-                        val types = subtypeInferences.map(_._1)
+                    val attemptedTCUnification = TypeContext.unionAllAndReturnSubst(subtypeInferences.map(_._2))
+                    ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                        val (tc, subst) = attemptedTCUnification
+                        val types = subtypeInferences.map(_._1.substitute(subst))
                         val unifiedType = unifyAll(types)
                         unifiedType match {
                             case Right((unifiedType, subst)) => {
@@ -255,9 +247,15 @@ object TypeChecker {
                         nextUnificationWithReturn match {
                             case Right((unifiedNextType, nextSubst)) => {
                                 returnType = unifiedNextType
-                                val unionResult = tc.union(nextTC)
+                                val unionResult = tc.unionAndReturnSubst(nextTC)
                                 unionResult match {
-                                    case Right(newTC) => tc = newTC.substitute(nextSubst)
+                                    case Right((newTC, unionSubst)) => {
+                                        val unifiedSubst = unionSubstitutions(nextSubst, unionSubst)
+                                        unifiedSubst match {
+                                            case Right(unifiedSubst) => tc = newTC.substitute(unifiedSubst)
+                                            case Left(_) => return unifiedSubst.asInstanceOf[Either[Error, (Type, TypeContext)]]
+                                        }
+                                    }
                                     case Left(_) => return unionResult.asInstanceOf[Either[Error, (Type, TypeContext)]]
                                 }
                             }
@@ -275,9 +273,15 @@ object TypeChecker {
                         endUnificationWithReturn match {
                             case Right((unifiedEndType, endSubst)) => {
                                 returnType = unifiedEndType
-                                val unionResult = tc.union(endTC)
+                                val unionResult = tc.unionAndReturnSubst(endTC)
                                 unionResult match {
-                                    case Right(newTC) => tc = newTC.substitute(endSubst)
+                                    case Right((newTC, unionSubst)) => {
+                                        val unifiedSubst = unionSubstitutions(endSubst, unionSubst)
+                                        unifiedSubst match {
+                                            case Right(unifiedSubst) => tc = newTC.substitute(unifiedSubst)
+                                            case Left(_) => return unifiedSubst.asInstanceOf[Either[Error, (Type, TypeContext)]]
+                                        }
+                                    }
                                     case Left(_) => return unionResult.asInstanceOf[Either[Error, (Type, TypeContext)]]
                                 }
                             }
@@ -377,9 +381,13 @@ object TypeChecker {
                             val inference = infer(env, SequenceComprehension(expr, remainingQualifiers))
                             ifNoTypeError[(Type, TypeContext)](inference, inference => {
                                 val (t, tc1) = inference
-                                val unionResult = tc.union(tc1)
-                                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](unionResult, unionResult => {
-                                    Right((t.substitute(subst), unionResult.substitute(subst)))
+                                val unionResult = tc.unionAndReturnSubst(tc1)
+                                ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](unionResult, unionResult => {
+                                    val (unifiedTC, unificationSubst) = unionResult
+                                    val unifiedSubst = unionSubstitutions(subst, unificationSubst)
+                                    ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unifiedSubst, unifiedSubst => {
+                                        Right((t.substitute(unifiedSubst), unifiedTC.substitute(unifiedSubst)))
+                                    })
                                 })
                             })
                         }
@@ -409,11 +417,11 @@ object TypeChecker {
                     ))
                 }
                 def ok(t: Type): Either[Error, (Type, TypeContext)] = {
-                    val unionResult = lTC.union(rTC)
-                    ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](
-                        unionResult,
-                        unionResult => Right((t, unionResult))
-                    )
+                    val unionResult = lTC.unionAndReturnSubst(rTC)
+                    ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](unionResult, unionResult => {
+                        val (tc, subst) = unionResult
+                        Right((t.substitute(subst), tc))
+                    })
                 }
                 def unifyAndYield(subst1: Substitution, subst2: Substitution, yieldValue: Type): Either[Error, (Type, TypeContext)] = {
                     val unifiedSubst = unionSubstitutions(subst1, subst2)
@@ -422,9 +430,13 @@ object TypeChecker {
                     })
                 }
                 def unifyTCAndYield(subst: Substitution, yieldValue: Type): Either[Error, (Type, TypeContext)] = {
-                    val attemptedTCUnification = lTC.union(rTC)
-                    ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
-                        Right((yieldValue, attemptedTCUnification.substitute(subst)))
+                    val attemptedTCUnification = lTC.unionAndReturnSubst(rTC)
+                    ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                        val (tc, subst1) = attemptedTCUnification
+                        val unifiedSubst = unionSubstitutions(subst, subst1)
+                        ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unifiedSubst, unifiedSubst => {
+                            Right((yieldValue, tc.substitute(unifiedSubst)))
+                        })
                     })
                 }
                 op match {
@@ -634,11 +646,14 @@ object TypeChecker {
                             case Right((unifiedType, subst2)) => {
                                 val unifiedSubst = unionSubstitutions(subst1, subst2)
                                 ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unifiedSubst, unifiedSubst => {
-                                    val tc = TypeContext.unionAll(
+                                    val attemptedTCUnification = TypeContext.unionAllAndReturnSubst(
                                         List(conditionTC, trueTC, falseTC)
                                     )
-                                    ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](tc, tc => {
-                                        Right((unifiedType, tc.substitute(unifiedSubst)))
+                                    ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                                        val (tc, subst) = attemptedTCUnification
+                                        ifNoTypeErrorMulti[Substitution, (Type, TypeContext)](unionSubstitutions(unifiedSubst, subst), unifiedSubst => {
+                                            Right((unifiedType, tc.substitute(unifiedSubst)))
+                                        })
                                     })
                                 })
                             }
@@ -723,9 +738,10 @@ object TypeChecker {
             altInferences(0)
         } else {
             ifNoTypeErrors[(Type, TypeContext)](altInferences, altInferences => {
-                val altTC = TypeContext.unionAll(altInferences.map(_._2))
-                ifNoTypeErrorMulti[TypeContext, (Type, TypeContext)](altTC, altTC => {
-                    val altTypes = altInferences.map(_._1)
+                val attemptedTCUnification = TypeContext.unionAllAndReturnSubst(altInferences.map(_._2))
+                ifNoTypeErrorMulti[(TypeContext, Substitution), (Type, TypeContext)](attemptedTCUnification, attemptedTCUnification => {
+                    val (altTC, subst) = attemptedTCUnification
+                    val altTypes = altInferences.map(_._1.substitute(subst))
                     val unifiedType = unifyAll(altTypes)
                     unifiedType match {
                         case Right((unifiedType, subst)) => {
