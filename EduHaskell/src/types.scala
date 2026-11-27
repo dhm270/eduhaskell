@@ -192,5 +192,21 @@ object types {
                 case _ => Left(SyntaxError(s"${e} does not define a valid type"))
             }
         }
+
+        def getSimplifiedSource(t: Type): String = {
+            val allGenericTypes = t.getGenericTypes()
+            var subst: Substitution = List()
+            val letters = ('a' to 'z').map(_.toString)
+            var i = 0
+            for (t <- allGenericTypes) {
+                if (i < 26) {
+                    subst ++= List((t, GenericType(letters(i))))
+                } else {
+                    subst ++= List((t, GenericType(s"t${i}")))
+                }
+                i += 1
+            }
+            t.substitute(subst).source
+        }
     }
 }

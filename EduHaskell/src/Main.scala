@@ -11,6 +11,7 @@ import eduhaskell.Scanner._
 import eduhaskell.values._
 import eduhaskell.syntax._
 import eduhaskell.errors._
+import eduhaskell.types._
 
 import eduhaskell.Evaluator
 import eduhaskell.Environment
@@ -22,6 +23,7 @@ import LRParser._
 object Main {
     var debugLevel = 0
     var shouldTypeCheck = true
+    var shouldSimplifyTypes = true
 
     def main(args: Array[String]): Unit = {
         var fileName = ""
@@ -41,6 +43,8 @@ object Main {
                     return printUsage()
                 case "-r" | "--no-repl" =>
                     shouldStartRepl = false
+                case "-s" | "--no-simplify-types" =>
+                    shouldSimplifyTypes = false
                 case "-u" | "--no-type-check" =>
                     shouldTypeCheck = false
                 case _ => fileName = arg
@@ -85,10 +89,11 @@ object Main {
 
     def printUsage(): Unit = {
         println("Usage: eduhaskell [flags-and-files]")
-        println("  -d, --debug-level     Configure the level of debug information outputted.")
-        println("  -h, --help            Display this help and exit.")
-        println("  -r, --no-repl         Just run the input file; don't also start the REPL.")
-        println("  -u, --no-type-check   Don't perform any type checking on REPL inputs.")
+        println("  -d, --debug-level        Configure the level of debug information outputted.")
+        println("  -h, --help               Display this help and exit.")
+        println("  -r, --no-repl            Just run the input file; don't also start the REPL.")
+        println("  -s, --no-simplify-types  Don't simplify e.g. `t34 -> t35` to `a -> b`.")
+        println("  -u, --no-type-check      Don't perform any type checking on REPL inputs.")
     }
 
     def translate(clause: TREE): TREE = {
@@ -224,8 +229,18 @@ object Main {
                         if (shouldTypeCheck) {
                             val extendedTypeEnvironment = replTypeEnv.withDefinition(d)
                             def f(env: TypeEnvironment): Unit = {
+                                val newDefs = env.difference(replTypeEnv)
                                 replTypeEnv = env
                                 eval()
+                                for ((newDefName, newDefType) <- newDefs) {
+                                    print(newDefName)
+                                    print(" :: ")
+                                    if (shouldSimplifyTypes) {
+                                        println(Type.getSimplifiedSource(newDefType))
+                                    } else {
+                                        println(newDefType.source)
+                                    }
+                                }
                             }
                             extendedTypeEnvironment match {
                                 case Right(newTypeEnv) => f(newTypeEnv)

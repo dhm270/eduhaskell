@@ -21,9 +21,6 @@ case class TypeEnvironment(map: Map[String, Type]) {
     }
 
     def define(ident: String, _type: Type): TypeEnvironment = {
-        print(ident)
-        print(" defined with type ")
-        println(_type.source)
         this.extended(ident, _type)
     }
 
