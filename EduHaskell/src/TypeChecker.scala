@@ -596,7 +596,7 @@ object TypeChecker {
                 lType match {
                     case FunctionType(argument, output) => {
                         // unify A with Q
-                        val unificationResult = unify(argument, rType)
+                        val unificationResult = unify(argument.substitute(unionSubst), rType.substitute(unionSubst))
                         ifNoTypeErrorMulti[(Type, Substitution), (Type, TypeContext)](unificationResult, unificationResult => {
                             val (unifiedArgument, subst) = unificationResult
                             unionTC = unionTC.substitute(subst)
@@ -609,7 +609,7 @@ object TypeChecker {
                     case GenericType(name) => {
                         // unify a with Q -> b
                         val freshVar = newGenericType()
-                        val unificationResult = unify(lType, FunctionType(rType, freshVar))
+                        val unificationResult = unify(lType.substitute(unionSubst), FunctionType(rType.substitute(unionSubst), freshVar))
                         ifNoTypeErrorMulti[(Type, Substitution), (Type, TypeContext)](unificationResult, unificationResult => {
                             val (unifiedArgument, subst) = unificationResult
                             unionTC = unionTC.substitute(subst)
